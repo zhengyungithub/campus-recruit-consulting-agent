@@ -1,0 +1,1605 @@
+{
+ "summary": {
+  "mode": "agent",
+  "total": 37,
+  "intent_acc": 1.0,
+  "must_rate": 0.848,
+  "cite_rate": 0.87,
+  "tool_rate": 0.0,
+  "ticket_acc": 1.0,
+  "plan_llm": 0,
+  "degraded": 37,
+  "llm_downgraded": 37,
+  "errors": 0,
+  "verify_pass_rate": null,
+  "redline_hits": 0,
+  "coref_hits": 3,
+  "repeat_hits": 1,
+  "judge_calls": 0,
+  "judge_bad": 0,
+  "passed_rate": 0.703,
+  "avg_latency_ms": 898,
+  "p95_latency_ms": 1759,
+  "per_intent": {
+   "greeting": {
+    "total": 3,
+    "ok": 3
+   },
+   "progress_query": {
+    "total": 5,
+    "ok": 5
+   },
+   "kb_qa": {
+    "total": 21,
+    "ok": 21
+   },
+   "human_handoff": {
+    "total": 6,
+    "ok": 6
+   },
+   "out_of_scope": {
+    "total": 2,
+    "ok": 2
+   }
+  }
+ },
+ "details": [
+  {
+   "id": 1,
+   "q": "你好",
+   "expect_intent": "greeting",
+   "mode": "agent",
+   "actual_intent": "greeting",
+   "intent_source": "rule",
+   "intent_confidence": 0.95,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": []
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你好！我是校招咨询助手，可以解答校招流程、材料、网签等问题，也可以在【我的进度】查看当前环节。请问有什么可以帮你？",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 10276,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 2,
+   "q": "您好！",
+   "expect_intent": "greeting",
+   "mode": "agent",
+   "actual_intent": "greeting",
+   "intent_source": "rule",
+   "intent_confidence": 0.95,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": []
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你好！我是校招咨询助手，可以解答校招流程、材料、网签等问题，也可以在【我的进度】查看当前环节。请问有什么可以帮你？",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 313,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 3,
+   "q": "谢谢",
+   "expect_intent": "greeting",
+   "mode": "agent",
+   "actual_intent": "greeting",
+   "intent_source": "rule",
+   "intent_confidence": 0.95,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": []
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "不客气～祝求职顺利！还有问题随时问我。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 299,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 4,
+   "q": "我的进度到哪一步了",
+   "expect_intent": "progress_query",
+   "mode": "agent",
+   "actual_intent": "progress_query",
+   "intent_source": "rule",
+   "intent_confidence": 0.92,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你当前处于【已初筛通过】环节。下一步：等待测评发起，请留意通知短信。 可在【我的进度】查看完整时间线。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 344,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：get_my_progress"
+   ]
+  },
+  {
+   "id": 5,
+   "q": "我通过了吗",
+   "expect_intent": "progress_query",
+   "mode": "agent",
+   "actual_intent": "progress_query",
+   "intent_source": "rule",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你当前处于【已初筛通过】环节。下一步：等待测评发起，请留意通知短信。 可在【我的进度】查看完整时间线。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 424,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 6,
+   "q": "我的offer什么时候能下来",
+   "expect_intent": "progress_query",
+   "mode": "agent",
+   "actual_intent": "progress_query",
+   "intent_source": "rule",
+   "intent_confidence": 0.85,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress",
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你当前处于【已初筛通过】环节。下一步：等待测评发起，请留意通知短信。 可在【我的进度】查看完整时间线。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 351,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 7,
+   "q": "我现在处于什么环节",
+   "expect_intent": "progress_query",
+   "mode": "agent",
+   "actual_intent": "progress_query",
+   "intent_source": "rule",
+   "intent_confidence": 0.92,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你当前处于【已初筛通过】环节。下一步：等待测评发起，请留意通知短信。 可在【我的进度】查看完整时间线。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 370,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 8,
+   "q": "校招的流程是什么",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "整体流程为：宣讲 → 简历初筛 → 在线测评 → 专业面试（初面）→ 复试 → 上传面试资料 → 审核 → 意向沟通会 → 上传体检资料 → 审核 → 录用审批 → offer 发放 → 网签 → 三方盖章返邮 → 录用资料归档。你可以在【我的进度】中查看自己当前所处的环节。\n\n（参考条目：校招的流程是什么？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 1759,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：knowledge_search"
+   ]
+  },
+  {
+   "id": 9,
+   "q": "初面是什么形式",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "分为两类站点：线上站点通过腾讯会议进行专业面试官初面；线下站点在酒店/站点现场面试。具体形式以你收到的面试通知短信为准。\n\n（参考条目：初面是什么形式？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 444,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 10,
+   "q": "我错过了约定的面试时间怎么办",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "请尽快自行联系面试官重新约定时间，最迟不要超过原定面试时间的第二天。也可在对话框留言，由工作人员协助协调。\n\n（参考条目：我错过了约定的面试时间怎么办？）",
+   "citations": 2,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 389,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 11,
+   "q": "复试在哪里进行",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "线上站点复试通过格慧招安排（基地人力面试）；线下站点在站点酒店现场进行。具体时间地点以通知为准。\n\n（参考条目：复试在哪里进行？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 526,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 12,
+   "q": "面试资料包括哪些",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "一般包括身份证、学生证、成绩单、获奖证书等扫描件。收到上传通知短信后，点击短信中的链接即可上传，支持 PDF 和图片格式。\n\n（参考条目：面试资料包括哪些？怎么上传？）",
+   "citations": 2,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 499,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：knowledge_search"
+   ]
+  },
+  {
+   "id": 13,
+   "q": "面试资料怎么上传",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "一般包括身份证、学生证、成绩单、获奖证书等扫描件。收到上传通知短信后，点击短信中的链接即可上传，支持 PDF 和图片格式。\n\n（参考条目：面试资料包括哪些？怎么上传？）",
+   "citations": 2,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 349,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 14,
+   "q": "面试资料审核不通过怎么办",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "审核驳回后会通过短信告知驳回原因，请按原因修改后在原链接重新上传，系统会自动重新提交审核。\n\n（参考条目：面试资料审核不通过怎么办？）",
+   "citations": 2,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 558,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 15,
+   "q": "体检资料有什么要求",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "需上传指定级别医院的体检报告。收到体检资料上传通知后，在链接中上传即可，审核通过后会进入录用审批环节。\n\n（参考条目：体检资料有什么要求？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 495,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 16,
+   "q": "意向沟通会是什么",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "面试与资料审核通过后，领队会组织意向沟通会，说明岗位、地点、待遇等信息，并确认你的入职意向。请按通知时间参加。\n\n（参考条目：意向沟通会是什么？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 442,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 17,
+   "q": "offer 什么时候发",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "面试资料与体检资料均审核通过后，领队制作录用表报领导审批，审批通过后制作 offer 发放表并发放 offer，请耐心等待通知。\n\n（参考条目：offer 什么时候发？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 341,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 18,
+   "q": "网签怎么操作",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "收到网签通知后，登录网签系统确认应约，并及时打印纸质三方协议寄回公司。公司盖章后会返邮给你，请保持电话畅通。\n\n（参考条目：网签怎么操作？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 412,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 19,
+   "q": "纸质三方协议什么时候寄回",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你在网签系统应约并打印纸质三方后寄给公司，公司盖章后返邮给你，寄送状态可在对话框咨询或留意通知。\n\n（参考条目：纸质三方协议什么时候寄回？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 394,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 20,
+   "q": "测评链接失效了怎么办",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "请在对话框留言说明情况并留下手机号，工作人员会协助重新发送测评链接。\n\n（参考条目：测评没做完/测评链接失效怎么办？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 339,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 21,
+   "q": "校招结果在哪里查询",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你可以在【我的进度】中实时查看自己当前所处的环节；涉及是否通过的结果，均以通知短信和进度页面为准。\n\n（参考条目：校招结果在哪里查询？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 315,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 22,
+   "q": "帮我改一下面试时间",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.88,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #152），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 396,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：create_ticket"
+   ]
+  },
+  {
+   "id": 23,
+   "q": "我想换个面试站点",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #153），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 432,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 24,
+   "q": "可以更换投递岗位吗",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "岗位调整需要人工评估，请在对话框说明你的诉求，会有工作人员与你联系。\n\n（参考条目：可以更换投递岗位吗？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 337,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 25,
+   "q": "帮我催一下进度，很急",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress",
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #154），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 380,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 26,
+   "q": "转人工",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #155），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 385,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 27,
+   "q": "HR的联系电话是多少",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.85,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #156），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 403,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 28,
+   "q": "今天天气怎么样",
+   "expect_intent": "out_of_scope",
+   "mode": "agent",
+   "actual_intent": "out_of_scope",
+   "intent_source": "rule",
+   "intent_confidence": 0.8,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search",
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个问题超出了我的自动回答范围，已为你生成反馈工单（编号 #157），工作人员会尽快处理，处理结果将在【我的反馈】中显示。你也可以拨打站点领队电话咨询。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 407,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 29,
+   "q": "帮我推荐几只股票",
+   "expect_intent": "out_of_scope",
+   "mode": "agent",
+   "actual_intent": "out_of_scope",
+   "intent_source": "rule",
+   "intent_confidence": 0.8,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个问题超出了我的自动回答范围，已为你生成反馈工单（编号 #158），工作人员会尽快处理，处理结果将在【我的反馈】中显示。你也可以拨打站点领队电话咨询。",
+   "citations": 0,
+   "must_hit": null,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": null,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 387,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 30,
+   "q": "入职后怎么换岗",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "满一年后可以内部转岗\n\n（参考条目：入职后怎么换岗）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": null,
+   "ticket_ok": true,
+   "latency_ms": 339,
+   "passed": true,
+   "reasons": []
+  },
+  {
+   "id": 31,
+   "q": "我现在的进度到哪一步了？另外体检资料有什么要求？",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.85,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress",
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "需上传指定级别医院的体检报告。收到体检资料上传通知后，在链接中上传即可，审核通过后会进入录用审批环节。\n\n（参考条目：体检资料有什么要求？）",
+   "citations": 1,
+   "must_hit": 0.5,
+   "must_miss": [
+    "已初筛通过"
+   ],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 332,
+   "passed": false,
+   "reasons": [
+    "缺关键事实：已初筛通过",
+    "工具序列缺失：get_my_progress、knowledge_search"
+   ]
+  },
+  {
+   "id": 32,
+   "q": "我的环节到哪了，还有面试资料要上传哪些",
+   "expect_intent": "progress_query",
+   "mode": "agent",
+   "actual_intent": "progress_query",
+   "intent_source": "rule",
+   "intent_confidence": 0.92,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "get_my_progress",
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "你当前处于【已初筛通过】环节。下一步：等待测评发起，请留意通知短信。 可在【我的进度】查看完整时间线。",
+   "citations": 0,
+   "must_hit": 0.5,
+   "must_miss": [
+    "身份证"
+   ],
+   "must_not_violated": [],
+   "cite_ok": false,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 382,
+   "passed": false,
+   "reasons": [
+    "缺关键事实：身份证",
+    "应引用知识库但无引用",
+    "工具序列缺失：get_my_progress、knowledge_search"
+   ]
+  },
+  {
+   "id": 33,
+   "q": "先帮我改期面试，顺便问一下网签怎么操作",
+   "expect_intent": "human_handoff",
+   "mode": "agent",
+   "actual_intent": "human_handoff",
+   "intent_source": "rule",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search",
+     "create_ticket"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": false,
+   "answer": "这个需求需要人工办理，我已为你生成反馈工单（编号 #159），工作人员会尽快处理，处理结果将在【我的反馈】中显示。",
+   "citations": 0,
+   "must_hit": 0.0,
+   "must_miss": [
+    "应约"
+   ],
+   "must_not_violated": [],
+   "cite_ok": false,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 433,
+   "passed": false,
+   "reasons": [
+    "缺关键事实：应约",
+    "应引用知识库但无引用",
+    "工具序列缺失：knowledge_search、create_ticket"
+   ]
+  },
+  {
+   "id": 34,
+   "q": "那这个要多久能出结果",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "fallback",
+   "intent_confidence": 0.5,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": "体检资料要多久能出结果",
+   "referent": "体检资料",
+   "repeat": false,
+   "answer": "需上传指定级别医院的体检报告。收到体检资料上传通知后，在链接中上传即可，审核通过后会进入录用审批环节。\n\n（参考条目：体检资料有什么要求？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 4945,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：knowledge_search"
+   ]
+  },
+  {
+   "id": 35,
+   "q": "还要多久",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "fallback",
+   "intent_confidence": 0.5,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": "网签还要多久",
+   "referent": "网签",
+   "repeat": false,
+   "answer": "这个问题超出了我的自动回答范围，已为你生成反馈工单（编号 #160），工作人员会尽快处理，处理结果将在【我的反馈】中显示。你也可以拨打站点领队电话咨询。",
+   "citations": 0,
+   "must_hit": 0.0,
+   "must_miss": [
+    "网签"
+   ],
+   "must_not_violated": [],
+   "cite_ok": false,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 1597,
+   "passed": false,
+   "reasons": [
+    "缺关键事实：网签",
+    "应引用知识库但无引用",
+    "工具序列缺失：knowledge_search"
+   ]
+  },
+  {
+   "id": 36,
+   "q": "还有呢",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "fallback",
+   "intent_confidence": 0.5,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": "面试资料",
+   "referent": "面试资料",
+   "repeat": false,
+   "answer": "一般包括身份证、学生证、成绩单、获奖证书等扫描件。收到上传通知短信后，点击短信中的链接即可上传，支持 PDF 和图片格式。\n\n（参考条目：面试资料包括哪些？怎么上传？）",
+   "citations": 2,
+   "must_hit": 0.5,
+   "must_miss": [
+    "审核"
+   ],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 1110,
+   "passed": false,
+   "reasons": [
+    "缺关键事实：审核",
+    "工具序列缺失：knowledge_search"
+   ]
+  },
+  {
+   "id": 37,
+   "q": "体检资料有什么要求",
+   "expect_intent": "kb_qa",
+   "mode": "agent",
+   "actual_intent": "kb_qa",
+   "intent_source": "retrieval",
+   "intent_confidence": 0.9,
+   "intent_ok": true,
+   "verify": null,
+   "tools": [],
+   "plan": {
+    "source": "rule",
+    "steps": [
+     "knowledge_search"
+    ]
+   },
+   "degraded": true,
+   "failures": [
+    "llm_error"
+   ],
+   "llm_down": true,
+   "unsupported": [],
+   "redlines": [],
+   "judge": null,
+   "ungrounded": [],
+   "resolved": null,
+   "referent": null,
+   "repeat": true,
+   "answer": "需上传指定级别医院的体检报告。收到体检资料上传通知后，在链接中上传即可，审核通过后会进入录用审批环节。\n\n（参考条目：体检资料有什么要求？）",
+   "citations": 1,
+   "must_hit": 1.0,
+   "must_miss": [],
+   "must_not_violated": [],
+   "cite_ok": true,
+   "tool_ok": false,
+   "ticket_ok": true,
+   "latency_ms": 1323,
+   "passed": false,
+   "reasons": [
+    "工具序列缺失：knowledge_search"
+   ]
+  }
+ ]
+}
