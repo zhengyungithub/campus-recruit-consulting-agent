@@ -1,0 +1,42 @@
+{"id": 1, "q": "你好", "intent": "greeting", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 2, "q": "您好！", "intent": "greeting", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 3, "q": "谢谢", "intent": "greeting", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 4, "q": "我的进度到哪一步了", "intent": "progress_query", "cite": false, "ticket": false, "must": [], "must_not": [], "tools": ["get_my_progress"]}
+{"id": 5, "q": "我通过了吗", "intent": "progress_query", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 6, "q": "我的offer什么时候能下来", "intent": "progress_query", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 7, "q": "我现在处于什么环节", "intent": "progress_query", "cite": false, "ticket": false, "must": [], "must_not": []}
+{"id": 8, "q": "校招的流程是什么", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["初筛", "测评", "面试"], "must_not": [], "tools": ["knowledge_search"]}
+{"id": 9, "q": "初面是什么形式", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["腾讯会议"], "must_not": []}
+{"id": 10, "q": "我错过了约定的面试时间怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["联系面试官"], "must_not": ["已为你生成反馈工单", "已为你提交反馈工单", "已创建反馈工单", "已转人工"]}
+{"id": 11, "q": "复试在哪里进行", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["线上", "线下"], "must_not": []}
+{"id": 12, "q": "面试资料包括哪些", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["身份证", "成绩单"], "must_not": [], "tools": ["knowledge_search"]}
+{"id": 13, "q": "面试资料怎么上传", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["短信"], "must_not": []}
+{"id": 14, "q": "面试资料审核不通过怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["重新上传"], "must_not": []}
+{"id": 15, "q": "体检资料有什么要求", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["体检报告"], "must_not": []}
+{"id": 16, "q": "意向沟通会是什么", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["岗位", "待遇"], "must_not": []}
+{"id": 17, "q": "offer 什么时候发", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["审批"], "must_not": []}
+{"id": 18, "q": "网签怎么操作", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["应约", "三方"], "must_not": []}
+{"id": 19, "q": "纸质三方协议什么时候寄回", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["寄"], "must_not": []}
+{"id": 20, "q": "测评链接失效了怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["留言", "重新发送"], "must_not": []}
+{"id": 21, "q": "校招结果在哪里查询", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["我的进度"], "must_not": []}
+{"id": 22, "q": "帮我改一下面试时间", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": ["create_ticket"]}
+{"id": 23, "q": "我想换个面试站点", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 24, "q": "可以更换投递岗位吗", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["人工评估", "工作人员"], "must_not": []}
+{"id": 25, "q": "帮我催一下进度，很急", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 26, "q": "转人工", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 27, "q": "HR的联系电话是多少", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 28, "q": "今天天气怎么样", "intent": "out_of_scope", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 29, "q": "帮我推荐几只股票", "intent": "out_of_scope", "cite": false, "ticket": true, "must": [], "must_not": []}
+{"id": 30, "q": "入职后怎么换岗", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["一年"], "must_not": []}
+{"id": 31, "q": "我现在的进度到哪一步了？另外体检资料有什么要求？", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["已初筛通过", "体检报告"], "must_not": [], "tools": ["get_my_progress", "knowledge_search"], "modes": ["agent"]}
+{"id": 32, "q": "我的环节到哪了，还有面试资料要上传哪些", "intent": "progress_query", "cite": true, "ticket": false, "must": ["已初筛通过", "身份证"], "must_not": [], "tools": ["get_my_progress", "knowledge_search"], "modes": ["agent"]}
+{"id": 33, "q": "先帮我改期面试，顺便问一下网签怎么操作", "intent": "human_handoff", "cite": true, "ticket": true, "must": ["应约"], "must_not": [], "tools": ["knowledge_search", "create_ticket"], "modes": ["agent"]}
+{"id": 34, "prev": {"user": "体检资料有什么要求？", "bot": "需上传指定级别医院的体检报告，收到上传通知后在链接中上传即可。"}, "q": "那这个要多久能出结果", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["体检"], "must_not": [], "tools": ["knowledge_search"], "expect_resolved": true, "modes": ["agent"]}
+{"id": 35, "prev": {"user": "网签怎么操作？", "bot": "登录网签系统确认应约，并及时打印纸质三方协议寄回公司。"}, "q": "还要多久", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["网签"], "must_not": [], "tools": ["knowledge_search"], "expect_resolved": true, "modes": ["agent"]}
+{"id": 36, "prev": {"user": "面试资料包括哪些？怎么上传？", "bot": "一般包括身份证、学生证、成绩单等扫描件；收到短信后点击链接上传。"}, "q": "还有呢", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["上传", "审核"], "must_not": [], "tools": ["knowledge_search"], "expect_resolved": true, "modes": ["agent"]}
+{"id": 37, "prev": {"user": "体检资料有什么要求？", "bot": "需上传指定级别医院的体检报告。"}, "q": "体检资料有什么要求", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["体检"], "must_not": [], "tools": ["knowledge_search"], "expect_repeat": true, "modes": ["agent"]}
+{"id": 38, "prev": {"user": "帮我改一下面试时间", "bot": "已为你提交改期工单，另外想确认你想改到哪一天/哪个时段？"}, "q": "改到下周三下午", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": [], "session": {"kind": "reschedule", "ticket_question": "候选人申请调整面试时间"}, "expect_slot": "下周三下午", "modes": ["agent"]}
+{"id": 39, "prev": {"user": "我想换个面试站点", "bot": "已为你提交换站点工单，另外想确认你想换到哪个城市？"}, "q": "换到上海", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": [], "session": {"kind": "change_site", "ticket_question": "候选人申请更换面试站点"}, "expect_slot": "上海", "modes": ["agent"]}
+{"id": 40, "prev": {"user": "帮我催一下进度", "bot": "已为你提交催办工单，另外想确认优先催办哪一项？"}, "q": "催一下体检结果", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": [], "session": {"kind": "urge", "ticket_question": "候选人申请催办进度"}, "expect_slot": "体检", "modes": ["agent"]}
+{"id": 41, "prev": {"user": "帮我改期面试", "bot": "已为你提交改期工单，另外想确认你想改到什么时间？"}, "q": "明天上午十点可以吗", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": [], "session": {"kind": "reschedule", "ticket_question": "候选人申请改期"}, "expect_slot": "明天上午十点", "modes": ["agent"]}
+{"id": 42, "prev": {"user": "帮我催一下进度", "bot": "已为你提交催办工单，另外想确认优先催办哪一项？"}, "q": "主要想催网签这块", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": [], "session": {"kind": "urge", "ticket_question": "候选人申请催办进度"}, "expect_slot": "网签", "modes": ["agent"]}
