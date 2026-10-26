@@ -65,6 +65,11 @@ def run_payload(payload: dict) -> dict:
             print(f"    {r['id']} {r['role']} {r['content'][:45]}")
         sys.stdout.flush()
 
+    # 降级观测：worker 是**常驻**进程，retrieval 里的计数会跨用例累积，
+    # 所以每条用例开跑前清零、结束后回报，由 eval 侧汇总。
+    from . import retrieval as _retr
+    _retr.stats(reset=True)
+
     t0 = time.time()
     try:
         if purge_vectors or mode == "purge":
@@ -92,6 +97,7 @@ def run_payload(payload: dict) -> dict:
     if not isinstance(out, dict):
         return {"error": f"返回值类型异常：{type(out).__name__}"}
     out["_worker_ms"] = int((time.time() - t0) * 1000)
+    out["_retrieval"] = _retr.stats()
     return out
 
 

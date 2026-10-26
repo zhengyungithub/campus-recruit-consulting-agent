@@ -11,6 +11,25 @@ _lock = threading.Lock()
 _qlock = threading.Lock()
 _client = None
 _QVEC_CACHE = {}      # md5(question) -> 问题向量（查重用，避免每次全量重算）
+
+# --- 降级观测（S4.5 门禁用） ---
+# 为什么需要：向量检索拿不到时 search() 会静默降级成纯关键词。
+# 线上这是对的（模型/向量挂了也要能回答），但在**评测门禁**里是致命的——
+# 实测 uvicorn 运行时 Qdrant 文件锁打不开，fixed 模式照样跑出 30/30，
+# 而它测的其实是纯关键词路径。门禁拿到这种"假绿灯"比红灯更危险。
+# 于是把降级次数显式计数，门禁据此判定"本轮结果不可信"。
+_STATS = {"search_calls": 0, "dense_ok": 0, "dense_fallback": 0, "client_error": 0}
+
+
+def stats(reset: bool = False) -> dict:
+    """返回（可选重置）降级观测计数。
+
+    client_error > 0 表示向量库压根没打开（多半被别的进程占着锁）；
+    dense_fallback > 0 表示库开了但这次检索的 embedding 请求挂了。
+    """
+    if reset:
+        _STATS.update({k: 0 for k in _STATS})
+    return dict(_STATS)
 try:
     import jieba
     _STOP = {"的", "了", "吗", "呢", "吧", "啊", "是", "有", "个", "我", "你", "他",
@@ -156,13 +175,23 @@ def _client_or_none():
     if _client is None:
         with _lock:
             if _client is None:
-                from qdrant_client import QdrantClient
-                from qdrant_client.models import Distance, VectorParams
-                c = QdrantClient(path=str(config.QDRANT_PATH))
-                for coll, dim in (("kb_entries", config.EMBED_DIM), ("chat_history", config.EMBED_DIM)):
-                    if not c.collection_exists(coll):
-                        c.create_collection(coll, vectors_config=VectorParams(size=dim, distance=Distance.COSINE))
-                _client = c
+                try:
+                    from qdrant_client import QdrantClient
+                    from qdrant_client.models import Distance, VectorParams
+                    c = QdrantClient(path=str(config.QDRANT_PATH))
+                    for coll, dim in (("kb_entries", config.EMBED_DIM),
+                                      ("chat_history", config.EMBED_DIM)):
+                        if not c.collection_exists(coll):
+                            c.create_collection(
+                                coll, vectors_config=VectorParams(size=dim, distance=Distance.COSINE))
+                    _client = c
+                except Exception:
+                    # 最常见成因：Qdrant 本地模式是**文件锁**，另一个进程（uvicorn）已独占。
+                    # 这里必须吞掉并返回 None——所有调用方本来就判了 `c is None`，
+                    # 抛出去只会让整条问答链路 500。降级次数记进 stats，
+                    # 交给门禁判断"本轮结果可不可信"。
+                    _STATS["client_error"] += 1
+                    return None
     return _client
 
 
@@ -235,6 +264,7 @@ def sync_faqs():
 
 def search(query: str, k: int = 4):
     """混合检索：dense + keyword 融合（dense 缺席时纯关键词，保证永不失败）"""
+    _STATS["search_calls"] += 1
     results = {r["id"]: {**r, "hybrid": r["score"]} for r in _keyword_search(query, k)}
     c = _client_or_none()
     if c is not None and c.count("kb_entries", exact=True).count > 0:
@@ -257,8 +287,9 @@ def search(query: str, k: int = 4):
                                      "answer": p.get("answer", ""), "category": p.get("category", ""),
                                      "score": round(dense, 4), "hybrid": round(dense, 4),
                                      "source": "dense"}
+            _STATS["dense_ok"] += 1
         except Exception:
-            pass                                     # dense 失败静默降级
+            _STATS["dense_fallback"] += 1            # 不再无声无息：门禁要看得到
     out = sorted(results.values(), key=lambda r: -r["hybrid"])[:k]
     return [r for r in out if r["hybrid"] >= 0.15]
 

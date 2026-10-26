@@ -16,6 +16,7 @@
     python -u run_eval.py agent 0 --repeats 3    # 同上 + 失败用例复跑取多数（门禁推荐）
     python -u run_eval.py agent 0 --only 14,21    # 只跑指定用例（排查用）
 """
+import json
 import sys
 import time
 from pathlib import Path
@@ -30,7 +31,7 @@ EX_OK, EX_ERR, EX_FAIL = 0, 1, 2
 
 def parse_args(argv: list):
     mode = argv[1] if len(argv) > 1 else "intent"
-    limit, repeats, only = 0, 1, None
+    limit, repeats, only, json_out = 0, 1, None, None
     i = 2
     while i < len(argv):
         a = argv[i]
@@ -39,15 +40,18 @@ def parse_args(argv: list):
         elif a == "--only" and i + 1 < len(argv):
             only = [int(x) for x in argv[i + 1].replace("，", ",").split(",") if x.strip()]
             i += 2
+        elif a == "--json" and i + 1 < len(argv):
+            # 门禁（gate.py）消费机器可读结果用：写 summary 到指定文件，不污染 stdout
+            json_out = argv[i + 1]; i += 2
         elif a.lstrip("-").isdigit():
             limit = int(a); i += 1
         else:
             i += 1
-    return mode, limit, repeats, only
+    return mode, limit, repeats, only, json_out
 
 
 def main():
-    mode, limit, repeats, only = parse_args(sys.argv)
+    mode, limit, repeats, only, json_out = parse_args(sys.argv)
 
     # 逐条打点：包一层 _run_one，打印每条用例耗时
     orig = ev._run_one
@@ -82,7 +86,22 @@ def main():
     if s.get("retry_used"):
         print(f"  多数投票：{s['retry_used']} 条用例触发复跑；flaky="
               f"{[c['id'] for c in (s.get('flaky_cases') or [])]}")
+    ret = s.get("retrieval") or {}
+    if any(ret.values()):
+        # 降级信号必须显式可见：client_error>0 说明本轮压根没用上向量检索，
+        # 通过率即便满分也只代表关键词路径，门禁据此判"结果不可信"
+        print(f"  检索降级{ret}"
+              + ("  ⚠️ 向量库未打开，本轮结果不代表真实能力"
+                 if ret.get("client_error") else ""))
     bad = [d for d in res["details"] if not d["passed"]]
+    if json_out:
+        # 门禁（gate.py）消费：只带失败用例的摘要，成功用例的明细没必要落盘
+        Path(json_out).write_text(json.dumps(
+            {"run_id": rid, "summary": s,
+             "failed_ids": [d.get("id") for d in bad],
+             "details": [{"id": d.get("id"), "q": d.get("q"),
+                          "reasons": (d.get("reasons") or [])[:3]} for d in bad]},
+            ensure_ascii=False, default=str), encoding="utf-8")
     if bad:
         print("失败用例:", [(d.get("id"), str(d.get("q"))[:24]) for d in bad])
         for d in bad:

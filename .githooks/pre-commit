@@ -1,0 +1,64 @@
+#!/bin/sh
+# 回归门禁（S4.5）：改了 Agent 链路 / 评测集就自动跑快检（约 8 秒）。
+#
+# 为什么放在 pre-commit 而不是 pre-push：
+#   快检走的是 intent + fixed，实测**不需要停服务**（固定管线用 SQL 关键词检索，
+#   不碰 Qdrant 文件锁），所以能在提交前安静地跑完。
+#   全量门禁（--full，含 agent）必须先停 uvicorn，留在合并前手动跑。
+#
+# 触发范围：只有改到下面这些路径才跑。改个文档也跑评测纯属浪费时间，
+# 而"该跑的时候没跑"和"不该跑的时候跑了"同样会让钩子被人 --no-verify 掉。
+#
+# 跳过：GATE_SKIP=1 git commit -m "..."（仅在确知无需验证时使用）
+
+[ -n "$GATE_SKIP" ] && exit 0
+
+changed=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$changed" ]; then exit 0; fi
+
+need=0
+for f in $changed; do
+    case "$f" in
+        app/agent/*|app/evals/*|app/gate.py|app/run_eval.py|app/main.py)
+            need=1; break ;;
+    esac
+done
+[ "$need" = "0" ] && exit 0
+
+# ---- 定位解释器 ----
+# 顺序：环境变量 → git config gate.python → 仓库内 .venv → PATH。
+# 为什么要有 git config 这一档：PATH 上的 python 未必有项目依赖
+# （本机默认的托管解释器就没有），而 .venv 未必建了。
+# 机器相关的配置不该进仓库，放在 .git/config 里正合适：
+#   git config gate.python "<venv>/Scripts/python.exe"
+root=$(git rev-parse --show-toplevel)
+cfg_py=$(git config gate.python 2>/dev/null)
+PY=""
+for cand in "$PYTHON" "$cfg_py" "$root/.venv/Scripts/python.exe" "$root/.venv/bin/python"; do
+    [ -n "$cand" ] && [ -x "$cand" ] && PY="$cand" && break
+done
+if [ -z "$PY" ]; then
+    PY=$(command -v python3 || command -v python)
+fi
+if [ -z "$PY" ]; then
+    echo "⚠️ 未找到 python，跳过回归门禁（可用 \$PYTHON 或 git config gate.python 指定）" >&2
+    exit 0
+fi
+
+# 依赖自检：解释器没有项目依赖时，评测会走降级路径静默"通过"——
+# 那比跑不了更危险（拿到的绿灯是假的），所以这里直接当失败处理。
+if ! "$PY" -c "import fastapi, langgraph" >/dev/null 2>&1; then
+    echo "❌ 回归门禁无法运行：当前解释器缺少项目依赖（$PY）" >&2
+    echo "   用 \$PYTHON 指向装了依赖的环境，例如：" >&2
+    echo "   PYTHON=<venv>/Scripts/python.exe git commit -m '...'" >&2
+    exit 1
+fi
+
+echo "── 检测到 Agent 链路改动，跑回归门禁（快检）──" >&2
+"$PY" -u "$root/app/gate.py"
+rc=$?
+if [ $rc -ne 0 ]; then
+    echo "" >&2
+    echo "提交被门禁拦下（退出码 $rc）。确认无需验证可：GATE_SKIP=1 git commit ..." >&2
+fi
+exit $rc

@@ -132,9 +132,11 @@ def _stream_agent(cid: int, question: str, mode: str):
     for i in range(0, len(answer), 48):
         yield {"event": "delta", "data": {"text": answer[i:i + 48]}}
     if r.get("citations"):
-        cite_items = [{"question": c["question"],
-                       "score": c.get("hybrid", c.get("score", 0))}
-                      for c in r["citations"][:3]]
+        # 不再带 score：相似度是内部元数据，已从不进模型视野的工具返回里移除
+        # （模型会照抄成「依据条目：{"question": ..., "score": 0.6868}」，
+        #  被 internal_leak 红线判负）。引用事件同源，取不到就别填——
+        # 恒定输出 0 比不输出更糟，那是在撒谎。前端本就不展示该字段。
+        cite_items = [{"question": c["question"]} for c in r["citations"][:3]]
         # 引用与终局核验是 graph 返回后由本层补发的，不补进轨迹会导致
         # 灰度看板与低分回流看不到引用来源（第5期修）。
         events.append({"type": "citation", "items": cite_items})

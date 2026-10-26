@@ -1,0 +1,33 @@
+{
+  "_doc": "回归门禁基线。min_passed_rate 是下限（低于即回归）；known_fail 是已接受的稳定失败用例（在白名单内只提示、不算回归）；require_dense 为真时，向量库打不开直接判环境冲突而非放行。用 python gate.py --update 刷新。",
+  "modes": {
+    "intent": {
+      "total": 30,
+      "min_passed_rate": 1.0,
+      "known_fail": [],
+      "tolerance": 0.0,
+      "repeats": 1,
+      "require_dense": false
+    },
+    "fixed": {
+      "total": 30,
+      "min_passed_rate": 1.0,
+      "known_fail": [],
+      "tolerance": 0.0,
+      "repeats": 1,
+      "require_dense": false
+    },
+    "agent": {
+      "total": 42,
+      "min_passed_rate": 0.926,
+      "known_fail": [
+        33
+      ],
+      "tolerance": 0.05,
+      "repeats": 3,
+      "require_dense": true
+    }
+  },
+  "updated_at": "2026-10-26T22:28:45",
+  "commit": "4d16ee8"
+}

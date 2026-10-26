@@ -38,22 +38,45 @@ def _audited(name, staff_only=False):
 
 
 # ---------------------------------------------------------------- 工具实现
+# knowledge_search 的**旁路输出**：最近一次命中的结构化数据（含 score 等内部字段）。
+# 只给框架（引用 / 看板）用，模型看不到——见 _knowledge_search 里的说明。
+# 单线程同步调用（tool.invoke 后立刻取走），不存在并发错配问题。
+_KB_LAST = {"hits": []}
+
+
+def take_kb_hits() -> list:
+    """取走最近一次知识库命中（结构化，含内部字段），取完即清。"""
+    return _KB_LAST.pop("hits", []) or []
+
+
 class KnowledgeSearchArgs(BaseModel):
     query: str = Field(description="检索问题，如：面试资料包括哪些")
 
 
 @_audited("knowledge_search")
 def _knowledge_search(candidate_id, query: str):
+    """检索知识库，返回**自然语言**给模型；结构化命中走旁路给框架（见 take_kb_hits）。
+
+    为什么不给 JSON：实测模型会把工具返回的 JSON 结构原样抄进答案——
+        「依据条目：{"question": "可以更换投递岗位吗？", "score": 0.6868}」
+    去掉 score 之后它照样抄 `{"question": ...}` 这个壳子。
+    **删字段是打地鼠，根因是"给模型看了结构化数据"**：模型要复述依据，
+    而 JSON 就在眼前，照抄是最省力的选择。
+
+    于是拆成两条通道：
+        模型看到 → 自然语言（只有问题与答案，无内部字段）
+        框架拿到 → take_kb_hits() 旁路（含 score 等，用于引用与看板）
+    这与 S4.4 补执行"回灌用自然语言而非裸 JSON"是同一条原则。
+    """
     hits = retrieval.search(query, k=4)
+    _KB_LAST["hits"] = hits or []
     if not hits:
-        return json.dumps({"results": [], "note": "知识库未命中"}, ensure_ascii=False)
-    # 注意：**不要把 source（hybrid/dense/keyword 融合模式）放进返回**。
-    # 它是纯内部元数据，对作答毫无帮助，但模型会照抄进答案回显给用户
-    # （实测出现「依据条目：xxx（来源：hybrid）」，被 internal_leak 红线判负）。
-    # 内部字段一律不进模型视野——这是"不把内部实现暴露给用户"的第一道闸。
-    return json.dumps({"results": [
-        {"question": h["question"], "answer": h["answer"], "score": h["hybrid"]}
-        for h in hits]}, ensure_ascii=False)
+        return "知识库未命中任何条目。请如实告知候选人：该问题知识库暂无答案，建议转人工处理。"
+    lines = [f"知识库命中 {len(hits)} 条："]
+    for i, h in enumerate(hits, 1):
+        lines.append(f"{i}. 问题：{h['question']}")
+        lines.append(f"   答案：{h['answer']}")
+    return "\n".join(lines)
 
 
 class ProgressArgs(BaseModel):

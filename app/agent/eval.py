@@ -147,7 +147,7 @@ def run_agent_guarded(cid: int, q: str, case_id, timeout: int = 120,
     # 开了就失去了超时可 kill 的兜底）
     if os.getenv("EVAL_INLINE") == "1":
         try:
-            return _worker_run(payload)
+            return _absorb_retrieval(_worker_run(payload))
         except Exception as e:
             return {"answer": "", "error": repr(e)}
 
@@ -167,7 +167,40 @@ def run_agent_guarded(cid: int, q: str, case_id, timeout: int = 120,
         return {"answer": "", "error": f"worker 返回类型异常：{type(r).__name__}"}
     if r.get("error"):
         return {"answer": "", "error": r["error"]}
-    return r or {"answer": "", "error": "无返回"}
+    return _absorb_retrieval(r) or {"answer": "", "error": "无返回"}
+
+
+# ---- 降级观测汇总（S4.5 门禁用）----
+#
+# 为什么需要：向量检索拿不到时 search() 会静默降级成纯关键词，用例照样能过——
+# 于是门禁会拿到一份"全绿但根本没测到向量检索"的结果。
+# 实测：uvicorn 运行时 Qdrant 文件锁打不开，fixed 模式仍跑出 30/30。
+# 这种**假绿灯比红灯危险**，所以把降级次数显式汇总进 summary，门禁据此判定可信度。
+#
+# intent / fixed 内联跑在父进程（读 retrieval.stats()）；
+# agent 跑在常驻 worker 子进程（统计随结果回传，见 eval_worker）。两侧相加才是全貌。
+_RETR_ACC: dict = {}
+
+
+def _absorb_retrieval(r: dict) -> dict:
+    """把 worker 回报的降级计数并入累加器（原样返回结果 dict）。"""
+    if isinstance(r, dict) and isinstance(r.get("_retrieval"), dict):
+        for k, v in r["_retrieval"].items():
+            _RETR_ACC[k] = _RETR_ACC.get(k, 0) + int(v or 0)
+    return r
+
+
+def _retrieval_summary(reset: bool = False) -> dict:
+    out = dict(_RETR_ACC)
+    if reset:
+        _RETR_ACC.clear()
+    try:
+        from . import retrieval
+        for k, v in retrieval.stats(reset=reset).items():
+            out[k] = out.get(k, 0) + int(v or 0)
+    except Exception:
+        pass
+    return out
 
 
 # ---- 常驻 worker 进程池（懒创建 / 超时可杀）----
@@ -485,6 +518,7 @@ def run(mode: str = "intent", limit: int = 0, cid: Optional[int] = None,
     else:
         cid = cid or 1
 
+    _retrieval_summary(reset=True)      # 清掉上一轮残留的降级计数
     details = []
     for c in cases:
         rec = _run_one(c, mode, cid)
@@ -559,6 +593,10 @@ def run(mode: str = "intent", limit: int = 0, cid: Optional[int] = None,
         "avg_latency_ms": int(sum(lat) / n),
         "p95_latency_ms": lat[int(n * 0.95) - 1] if n >= 2 else lat[0],
         "per_intent": per_intent,
+        # S4.5：检索降级观测（门禁据此判定"本轮结果可不可信"）。
+        # client_error > 0 = 向量库压根没打开（多半被 uvicorn 占着锁），
+        # 此时用例走的是纯关键词路径，通过率再高也不代表真实能力。
+        "retrieval": _retrieval_summary(reset=True),
     }
     return {"summary": summary, "details": details}
 

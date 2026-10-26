@@ -302,22 +302,14 @@ def node_force_act(state: AgentState):
         trace.append({"tool": name, "args": args})
         done.append(name)
         if name == "knowledge_search":
-            # 检索结果转成自然语言再回灌：**不要把裸 JSON 塞给模型**。
-            # 模型有照抄的倾向，原样给它 JSON 就等于邀请它把 {"score": ...} 写进答案，
-            # 触发 internal_leak 红线（实测 #24 就是这样被判负的）。
-            try:
-                items = json.loads(result).get("results") or []
-            except Exception:
-                items = []
-            if items:
-                lines.append("知识库检索到以下依据：\n" + "\n".join(
-                    f"{i}. 问：{r.get('question','')}\n   答：{r.get('answer','')}"
-                    for i, r in enumerate(items, 1)))
-                for r in items:
-                    if r.get("question") not in {c.get("question") for c in cites}:
-                        cites.append(r)
-            else:
-                lines.append("知识库检索未命中任何条目（依据为空）。")
+            # result 已是自然语言，直接回灌；引用从旁路取（含 score 等内部字段，
+            # 不进模型视野）。早期版本在这里 json.loads 工具返回重新拼一遍，
+            # 既多余又把结构化数据在代码里过了一遍手——现在不需要了。
+            from . import tools as _tools
+            for r in _tools.take_kb_hits():
+                if r.get("question") not in {c.get("question") for c in cites}:
+                    cites.append(r)
+            lines.append("知识库检索到以下依据：\n" + result)
         else:
             lines.append(f"{name} 的结果：{result}")
 
@@ -397,19 +389,19 @@ def node_act(state: AgentState):
         # ④ 空结果（知识库未命中）：给出一个可以自查的自愈方向
         content = result
         if tc["name"] == "knowledge_search":
-            try:
-                data = json.loads(result)
-                if data.get("results"):
-                    # 多次检索要累加（原来被最后一次覆盖，导致前面检索到的依据在核验时丢失）
-                    for r in data["results"]:
-                        if r.get("question") not in {c.get("question") for c in cites}:
-                            cites.append(r)
-                else:
-                    failures.append({"tool": tc["name"], "kind": "empty_result",
-                                     "advice": planner.FAILURE_ADVICE["empty_result"]})
-                    content = f"{result}\n【提示】{planner.FAILURE_ADVICE['empty_result']}"
-            except Exception:
-                pass
+            # 引用走**旁路**取结构化命中（含 score），工具返回给模型的已是自然语言，
+            # 这里不能再 json.loads 它——见 _knowledge_search 的说明。
+            from . import tools as _tools
+            items = _tools.take_kb_hits()
+            if items:
+                # 多次检索要累加（原来被最后一次覆盖，导致前面检索到的依据在核验时丢失）
+                for r in items:
+                    if r.get("question") not in {c.get("question") for c in cites}:
+                        cites.append(r)
+            else:
+                failures.append({"tool": tc["name"], "kind": "empty_result",
+                                 "advice": planner.FAILURE_ADVICE["empty_result"]})
+                content = f"{result}\n【提示】{planner.FAILURE_ADVICE['empty_result']}"
         out.append(ToolMessage(content=content, tool_call_id=tid))
     return {"messages": out, "citations": cites, "tool_trace": trace,
             "tool_results": results, "failures": failures}
