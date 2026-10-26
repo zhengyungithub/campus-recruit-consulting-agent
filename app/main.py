@@ -166,8 +166,10 @@ def init_db():
     if "source" not in fcols:
         conn.execute("ALTER TABLE faqs ADD COLUMN source TEXT DEFAULT 'manual'")
         conn.execute("UPDATE faqs SET source='manual' WHERE source IS NULL OR source=''")
-    if conn.execute("SELECT COUNT(*) c FROM candidates").fetchone()["c"] == 0:
-        seed(conn)
+    # 注意：seed() 现在总是调用——它在知识库非空时会早退，但**必须跑一趟**
+    # 才能把 SEED_FAQS 填好，供下面的来源校正使用（存量库的种子条目来源标错过）。
+    seed(conn)
+    _relabel_seed_source(conn)
     conn.commit()
     conn.close()
     _ensure_super_account()
@@ -194,8 +196,12 @@ def _ensure_super_account():
         conn.close()
 
 
+SEED_FAQS = None      # 由 seed() 首次调用时填充，供来源校正复用
+
+
 def seed(conn):
     """初始化基线 FAQ（业务真实流程知识）；候选人名单由 HR 后台导入真实数据。"""
+    global SEED_FAQS
     now = datetime.now().isoformat(timespec="seconds")
     faqs = [
         ("校招的流程是什么？",
@@ -227,14 +233,39 @@ def seed(conn):
         ("校招结果在哪里查询？",
          "你可以在【我的进度】中实时查看自己当前所处的环节；涉及是否通过的结果，均以通知短信和进度页面为准。"),
     ]
-    for q, a in faqs:
+    seed_rows = [(q, a, "通用") for q, a in faqs]
+    seed_rows.append(("HR 后台如何登录？",
+                      "使用管理员账号登录后台（账号密码由系统管理员配置）。", "内部"))
+    SEED_FAQS = seed_rows        # 供 _relabel_seed_source 校正来源标记复用
+
+    # 只在知识库为空时灌种子；已有数据不动（避免覆盖 HR 的编辑与沉淀）
+    if conn.execute("SELECT COUNT(*) FROM faqs").fetchone()[0] > 0:
+        return
+    for q, a, cat in seed_rows:
         conn.execute(
             "INSERT INTO faqs(question,answer,category,source,created_at) VALUES(?,?,?,?,?)",
-            (q, a, "通用", "kb_seed", now))
-    conn.execute(
-        "INSERT INTO faqs(question,answer,category,source,created_at) VALUES(?,?,?,?,?)",
-        ("HR 后台如何登录？", "使用管理员账号登录后台（账号密码由系统管理员配置）。", "内部", "kb_seed", now))
+            (q, a, cat, "kb_seed", now))
     conn.commit()
+
+
+def _relabel_seed_source(conn):
+    """把"实际是种子条目但被标成 manual"的行改回 kb_seed（幂等，每次启动跑一次）。
+
+    为什么需要：S2 给 faqs 加 source 列时，存量数据的回填口径是"一律 manual"。
+    而这些存量恰恰就是上一轮灌进去的种子条目，于是**所有种子条目都显示成"手动添加"**，
+    来源标记（S2.2）失真——后台按来源筛选看不出哪些是基准数据，
+    "整体回滚"也分不清哪些是能安全清掉的导入数据。
+    这里按问题原文比对回填，只在启动时执行一次，不碰 HR 后期编辑的内容。
+    """
+    if not SEED_FAQS:
+        return
+    n = 0
+    for q, _a, _cat in SEED_FAQS:
+        cur = conn.execute("UPDATE faqs SET source='kb_seed' WHERE question=? AND source<>'kb_seed'",
+                           (q,))
+        n += cur.rowcount or 0
+    if n:
+        conn.commit()
 
 
 # ---------------------------------------------------------------- 检索（bigram + jieba 词覆盖）
