@@ -8,6 +8,31 @@
         <span class="sub">校招咨询助手</span>
       </div>
       <div class="tb-right">
+        <!-- S5.3 主动推送：进度变更 / 待办停滞会主动推站内通知，未读数在铃铛上 -->
+        <el-popover v-if="logged" placement="bottom-end" :width="360" trigger="click" @show="loadNotices">
+          <template #reference>
+            <div class="bell-wrap" title="通知">
+              <el-icon class="bell"><Bell /></el-icon>
+              <span v-if="unread" class="bell-dot">{{ unread > 99 ? '99+' : unread }}</span>
+            </div>
+          </template>
+          <div class="np">
+            <div class="np-head">
+              <b>通知</b>
+              <el-button v-if="unread" link type="primary" size="small" @click="readAll">全部已读</el-button>
+            </div>
+            <div v-if="!notices.length" class="np-empty">暂无通知</div>
+            <div v-for="n in notices" :key="n.id" class="np-item" :class="{ unread: !n.read_at }"
+                 @click="readOne(n)">
+              <div class="np-title">{{ n.title }}</div>
+              <div class="np-body">{{ n.body }}</div>
+              <div class="np-time">
+                {{ fmtTime(n.created_at) }}
+                <el-tag v-if="!n.read_at" size="small" type="danger" effect="plain">未读</el-tag>
+              </div>
+            </div>
+          </div>
+        </el-popover>
         <el-button link @click="drawerProg = true">我的进度</el-button>
         <el-button link @click="drawerTk = true">我的反馈</el-button>
         <el-button v-if="logged" link @click="openAcct">账号设置</el-button>
@@ -197,9 +222,9 @@
 </template>
 
 <script setup>
-import { ref, nextTick, computed, onMounted } from 'vue'
+import { ref, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, Promotion, InfoFilled } from '@element-plus/icons-vue'
+import { ChatDotRound, Promotion, InfoFilled, Bell } from '@element-plus/icons-vue'
 import { api, cand } from '../api'
 
 const logged = ref(cand.logged)
@@ -217,7 +242,28 @@ const chatBox = ref(null)
 const procStages = ref([]), procSteps = ref([])
 const showProc = ref(false), delMode = ref(false)
 const drawerProg = ref(false), drawerTk = ref(false)
-const quickQs = ['校招流程是怎样的？', '我现在到哪一步了？', '面试资料有什么要求？', '网签怎么操作？']
+// S5.3 站内通知：铃铛未读数每 60 秒轮询一次，展开面板时即时拉列表
+const notices = ref([]), unread = ref(0)
+let noticeTimer = null
+const fmtTime = t => (t ? String(t).replace('T', ' ').slice(0, 16) : '')
+async function loadNotices() {
+  if (!logged.value) return
+  try {
+    const j = await api.notices(30)
+    notices.value = j.notices || []
+    unread.value = j.unread || 0
+  } catch { /* 通知拉取失败不该打断对话，静默即可 */ }
+}
+async function readOne(n) {
+  if (n.read_at) return
+  try { await api.readNotices({ ids: [n.id] }) } catch { /* ignore */ }
+  await loadNotices()
+}
+async function readAll() {
+  try { await api.readNotices({ all: true }) } catch { /* ignore */ }
+  await loadNotices()
+}
+const quickQs =['校招流程是怎样的？', '我现在到哪一步了？', '面试资料有什么要求？', '网签怎么操作？']
 
 const timeline = computed(() => profile.value?.timeline || [])
 const activeIdx = computed(() => timeline.value.findIndex(t => t.cur))
@@ -285,7 +331,10 @@ async function savePwd() {
     drawerAcct.value = false
   } catch (e) { ElMessage.error(e.message) }
 }
-function logout() { cand.token = ''; logged.value = false; messages.value = []; profile.value = null }
+function logout() {
+  cand.token = ''; logged.value = false; messages.value = []; profile.value = null
+  notices.value = []; unread.value = 0
+}
 
 async function enter() {
   try { agentMode.value = (await api.agentStatus()).mode } catch { /* ignore */ }
@@ -364,7 +413,15 @@ async function send() {
   loadTickets(); loadMe(); scroll()
 }
 
-onMounted(() => { if (logged.value) enter() })
+onMounted(() => {
+  if (logged.value) {
+    enter()
+    loadNotices()
+    // 未读数轮询：HR 改状态后候选人不必刷新页面就能看到红点
+    noticeTimer = setInterval(loadNotices, 60000)
+  }
+})
+onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer) })
 </script>
 
 <style scoped>
@@ -379,6 +436,24 @@ onMounted(() => { if (logged.value) enter() })
 .logo { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #a8bfa4, #8fae96);
   color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
 .tb-right { display: flex; align-items: center; gap: 2px; }
+/* S5.3 通知铃铛 */
+.bell-wrap { position: relative; display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; color: #5c6b62; }
+.bell-wrap:hover { background: rgba(143, 174, 150, .16); color: #3f4b44; }
+.bell { font-size: 18px; }
+.bell-dot { position: absolute; top: -1px; right: -1px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: #c4826f; color: #fff; font-size: 10px; font-weight: 600;
+  line-height: 16px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+.np { max-height: 420px; overflow-y: auto; }
+.np-head { display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px; border-bottom: 1px solid #eee; color: #3f4b44; }
+.np-empty { padding: 24px 0; text-align: center; color: #9aa39a; font-size: 13px; }
+.np-item { padding: 10px 8px; border-bottom: 1px solid #f2f2f0; cursor: pointer; border-radius: 6px; }
+.np-item:hover { background: #f7f8f5; }
+.np-item.unread { background: #f4f8f4; }
+.np-title { font-size: 13px; font-weight: 600; color: #3f4b44; }
+.np-body { font-size: 12px; color: #6b756c; margin-top: 3px; line-height: 1.6; }
+.np-time { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: #a3aba4; }
 .user { display: flex; align-items: center; gap: 8px; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; background: #dce5db; color: #5f7a68;
   display: flex; align-items: center; justify-content: center; font-size: 13px; }

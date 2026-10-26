@@ -11,6 +11,7 @@ import random
 import re
 import secrets
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from agent import dedupe as dedupe_mod
-from agent import pii, prompts, ratelimit, retrieval, runtime
+from agent import notices, pii, prompts, ratelimit, retrieval, runtime
 from agent import config as agent_config
 from agent.pipeline import fixed_chat_reply
 from agent.routes import router as agent_router
@@ -65,6 +66,10 @@ NEXT_STEP = {
     "三方已回收": "等待维护录用信息，请提前准备入职资料。",
     "已归档": "你的校招流程已全部完成，感谢配合！",
 }
+
+# S5.3：主动推送的文案是模板拼的，需要"状态 -> 下一步指引"这张表。
+# 显式注入而不是让 notices 反向 import main——那会形成循环导入。
+notices.bind(NEXT_STEP)
 
 GREET_RE = re.compile(r"^(你好|您好|hi|hello|嗨|哈喽|在吗)[!！。~\s]*$", re.I)
 THANKS_RE = re.compile(r"^(谢谢|多谢|感谢|thanks|thank you)[!！。~\s]*$", re.I)
@@ -166,6 +171,8 @@ def init_db():
     if "source" not in fcols:
         conn.execute("ALTER TABLE faqs ADD COLUMN source TEXT DEFAULT 'manual'")
         conn.execute("UPDATE faqs SET source='manual' WHERE source IS NULL OR source=''")
+    # S5.3 主动推送：独立建表，不复用 messages（避免污染对话历史与评测的历史播种）
+    notices.ensure_tables(conn)
     # 注意：seed() 现在总是调用——它在知识库非空时会早退，但**必须跑一趟**
     # 才能把 SEED_FAQS 填好，供下面的来源校正使用（存量库的种子条目来源标错过）。
     seed(conn)
@@ -404,6 +411,14 @@ def _set_kv(key: str, value: str):
     conn.close()
 
 
+def _scan_notices_safe():
+    """后台线程里跑推送扫描：异常只记录，绝不能把工作线程带崩。"""
+    try:
+        notices.scan()
+    except Exception as e:
+        print(f"[notice] 后台扫描失败（已跳过本轮）: {e!r}", flush=True)
+
+
 # ---------------------------------------------------------------- 候选人端 API
 @app.post("/api/login/request_code")
 def request_code(body: dict):
@@ -546,6 +561,27 @@ def my_tickets(request: Request):
         " WHERE candidate_id=? ORDER BY id DESC", (sess["id"],)).fetchall()
     conn.close()
     return {"tickets": [dict(r) for r in rows]}
+
+
+# ---------------------------------------------------------------- S5.3 主动推送（候选人端）
+@app.get("/api/notices")
+def my_notices(request: Request, limit: int = 50, unread_only: bool = False):
+    """站内通知列表 + 未读数（前端铃铛轮询这个接口）"""
+    sess = auth(request, "candidate")
+    items = notices.list_for(sess["id"], limit=min(max(limit, 1), 200),
+                             unread_only=bool(unread_only))
+    return {"notices": items, "unread": notices.unread_count(sess["id"])}
+
+
+@app.post("/api/notices/read")
+def read_notices(body: dict, request: Request):
+    """标记已读：给 ids 只标这几条，给 all=true 则全部已读"""
+    sess = auth(request, "candidate")
+    ids = body.get("ids") or []
+    if not isinstance(ids, list):
+        raise HTTPException(400, "ids 必须是数组")
+    n = notices.mark_read(sess["id"], ids=ids, all_=bool(body.get("all")))
+    return {"ok": True, "updated": n, "unread": notices.unread_count(sess["id"])}
 
 
 # ---------------------------------------------------------------- HR 端 API
@@ -919,6 +955,9 @@ def import_candidates(body: dict, request: Request):
         added += 1
     conn.commit()
     conn.close()
+    if added:
+        # 批量导入可能一次几百条，扫描放到后台跑，别让导入接口卡住
+        threading.Thread(target=_scan_notices_safe, daemon=True).start()
     return {"added": added, "skipped": skipped}
 
 
@@ -937,7 +976,55 @@ def update_status(cid: int, body: dict, request: Request):
                  " VALUES(?,?,?,?)", (cid, status, body.get("note") or "HR 手动更新", now()))
     conn.commit()
     conn.close()
+    # S5.3：状态一改就同步扫一次，候选人立刻能收到提醒；
+    # 后台线程只是兜底（覆盖批量导入等不走本接口的路径），不负责"即时性"。
+    notices.scan()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- S5.3 主动推送（管理端）
+@app.get("/api/admin/notices")
+def admin_notices(request: Request, limit: int = 100, kind: str = ""):
+    """推送记录：推了什么、推给谁、看了没。用来确认"真的发出去了"。"""
+    auth(request, "admin")
+    conn = db()
+    cfg = notices.get_config(conn)
+    conn.close()
+    return {"notices": notices.admin_list(limit=min(max(limit, 1), 500), kind=kind or ""),
+            "stats": notices.stats(), "config": cfg}
+
+
+@app.post("/api/admin/notices/scan")
+def admin_scan_notices(request: Request):
+    """手动触发一次扫描（后台线程每轮间隔较长，排查与验收时用这个立刻跑）"""
+    auth(request, "admin")
+    return {"ok": True, "result": notices.scan()}
+
+
+@app.post("/api/admin/notices/config")
+def admin_save_notice_config(request: Request, body: dict):
+    """【超管专属】推送开关与阈值：扫描周期改后需重启服务才生效，其余即时生效"""
+    auth_super(request)
+    conn = db()
+    kv = {}
+    for key, lo, hi in (("notice_enabled", 0, 1),
+                        ("notice_scan_interval", 10, 3600),
+                        ("notice_stale_days", 1, 60),
+                        ("notice_stale_cooldown", 1, 60)):
+        if key in body:
+            try:
+                v = int(str(body[key]).strip())
+            except (TypeError, ValueError):
+                conn.close()
+                raise HTTPException(400, f"{key} 必须是整数")
+            if not (lo <= v <= hi):
+                conn.close()
+                raise HTTPException(400, f"{key} 需在 {lo}~{hi} 之间")
+            kv[key] = v
+    notices.set_config(conn, **kv)
+    conn.commit()
+    conn.close()
+    return {"ok": True, "saved": list(kv), "config": notices.get_config()}
 
 
 @app.get("/api/admin/faqs")
@@ -1341,6 +1428,11 @@ def startup_agent():
         print(f"[agent] Qdrant 同步完成，更新 {n} 条知识条目")
     except Exception as e:
         print(f"[agent] Qdrant 初始化失败（不影响 keyword 检索）: {e!r}")
+    # S5.3 主动推送：常驻扫描线程兜底，覆盖批量导入、停滞超时等不走"改状态"接口的路径
+    try:
+        notices.start_worker()
+    except Exception as e:
+        print(f"[notice] 后台扫描线程启动失败（不影响运行）: {e!r}")
 
 
 if __name__ == "__main__":

@@ -42,9 +42,11 @@
               <span v-if="pendingCount" class="menu-badge">{{ pendingCount > 99 ? '99+' : pendingCount }}</span>
             </template>
           </el-menu-item>
+          <el-menu-item index="notice"><el-icon><Bell /></el-icon><template #title>主动推送</template></el-menu-item>
         </template>
         <template v-if="role === 'super'">
           <el-menu-item index="agent"><el-icon><MagicStick /></el-icon><template #title>Agent 灰度</template></el-menu-item>
+          <el-menu-item index="notice"><el-icon><Bell /></el-icon><template #title>主动推送</template></el-menu-item>
           <el-menu-item index="model"><el-icon><Key /></el-icon><template #title>模型配置</template></el-menu-item>
           <el-menu-item index="accounts"><el-icon><Avatar /></el-icon><template #title>HR 账号管理</template></el-menu-item>
           <el-menu-item index="eval"><el-icon><DataAnalysis /></el-icon><template #title>评测回归</template></el-menu-item>
@@ -79,6 +81,7 @@
         <CandTab v-else-if="tab === 'cand'" />
         <KbTab v-else-if="tab === 'kb'" />
         <TicketTab v-else-if="tab === 'tk'" @pending="pendingCount = $event" />
+        <NoticeTab v-else-if="tab === 'notice'" />
         <AgentTab v-else-if="tab === 'agent'" />
         <AccountTab v-else-if="tab === 'account'" />
         <ModelTab v-else-if="tab === 'model'" />
@@ -93,7 +96,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Odometer, Collection, ChatDotRound, MagicStick, Key, Fold, Expand, SwitchButton, UserFilled, Avatar, DataAnalysis } from '@element-plus/icons-vue'
+import { User, Lock, Odometer, Collection, ChatDotRound, MagicStick, Key, Fold, Expand, SwitchButton, UserFilled, Avatar, DataAnalysis, Bell } from '@element-plus/icons-vue'
 import { api, admin } from '../api'
 import DashTab from '../components/AdminDash.vue'
 import CandTab from '../components/AdminCandidates.vue'
@@ -105,6 +108,7 @@ import AccountTab from '../components/AdminAccount.vue'
 import ModelTab from '../components/AdminSettings.vue'
 import AccountsTab from '../components/AdminAccounts.vue'
 import EvalTab from '../components/AdminEval.vue'
+import NoticeTab from '../components/AdminNotices.vue'
 
 const logged = ref(admin.logged)
 const role = ref(localStorage.getItem('campus_admin_role') || '')
@@ -120,7 +124,8 @@ function toggleCollapse() {
 }
 const u = ref(''), p = ref('')
 const titles = { dash: '数据看板', cand: '候选人管理', kb: '知识库', tk: '反馈工单', agent: 'Agent 灰度',
-                 model: '模型配置（超管）', accounts: 'HR 账号管理', eval: '评测回归', account: '账号设置' }
+                 notice: '主动推送', model: '模型配置（超管）', accounts: 'HR 账号管理',
+                 eval: '评测回归', account: '账号设置' }
 const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
 async function doLogin() {
@@ -152,8 +157,8 @@ onMounted(async () => {
     localStorage.setItem('campus_admin_user', username.value)
     // 角色与当前页面不匹配时回到该角色的首页
     const allowed = role.value === 'super'
-      ? ['agent', 'model', 'accounts', 'eval', 'account']
-      : ['dash', 'cand', 'kb', 'tk', 'account']
+      ? ['agent', 'notice', 'model', 'accounts', 'eval', 'account']
+      : ['dash', 'cand', 'kb', 'tk', 'notice', 'account']
     if (!allowed.includes(tab.value)) tab.value = homeTab(role.value)
   } catch { /* ignore */ }
   try { pendingCount.value = (await api.tickets()).tickets.filter(t => t.status === 'pending').length } catch { /* ignore */ }

@@ -40,6 +40,9 @@ export const api = {
   me: () => request('/api/me', { auth: cand.token }),
   chatHistory: () => request('/api/chat/history', { auth: cand.token }),
   myTickets: () => request('/api/my_tickets', { auth: cand.token }),
+  // S5.3 主动推送：站内通知（候选人端）
+  notices: (limit = 50) => request(`/api/notices?limit=${limit}`, { auth: cand.token }),
+  readNotices: payload => request('/api/notices/read', { method: 'POST', body: payload, auth: cand.token }),
   agentStatus: () => request('/api/agent/status'),
   // SSE 流式问答，onEvent(event, data)，resolve 于 done/fallback 终止帧
   async chatStream(message, onEvent, headers = {}) {
@@ -132,7 +135,13 @@ export const api = {
   lowRuns: (limit = 30, maxRatio = 0.85) =>
     request(`/api/admin/agent_runs/low?limit=${limit}&max_ratio=${maxRatio}`, { auth: admin.token }),
   promoteCase: (runId, overrides = {}) =>
-    request('/api/admin/evals/promote', { method: 'POST', body: { run_id: runId, ...overrides }, auth: admin.token })
+    request('/api/admin/evals/promote', { method: 'POST', body: { run_id: runId, ...overrides }, auth: admin.token }),
+  // S5.3 主动推送：推送记录与配置（管理端）
+  adminNotices: (limit = 100, kind = '') =>
+    request(`/api/admin/notices?limit=${limit}${kind ? '&kind=' + encodeURIComponent(kind) : ''}`, { auth: admin.token }),
+  scanNotices: () => request('/api/admin/notices/scan', { method: 'POST', body: {}, auth: admin.token }),
+  saveNoticeConfig: payload =>
+    request('/api/admin/notices/config', { method: 'POST', body: payload, auth: admin.token })
 }
 
 export const STATUSES = [

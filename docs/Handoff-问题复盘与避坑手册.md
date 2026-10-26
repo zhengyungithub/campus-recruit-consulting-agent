@@ -45,7 +45,7 @@
 D:/校招咨询agent
 ├── app/                      # 后端（FastAPI）
 │   ├── main.py               # 全部路由 + 鉴权 + 建表 migrate
-│   ├── agent/                # Agent 层（13 个文件）
+│   ├── agent/                # Agent 层（20 个文件）
 │   │   ├── graph.py          # LangGraph 主图：context→intent→plan→agent⇄act→critic→(degrade/clarify)
 │   │   ├── intent.py         # 意图识别（规则优先 → KB 强命中 → LLM 兜底）
 │   │   ├── planner.py        # 规则化任务规划 + 子任务探测
@@ -56,10 +56,18 @@ D:/校招咨询agent
 │   │   ├── eval.py           # 评测引擎（intent / fixed / agent 三模式）
 │   │   ├── tools.py          # 4 个 LangChain 工具（带 Pydantic schema + 审计）
 │   │   ├── service.py / pipeline.py / routes.py / runtime.py
+│   │   ├── notices.py        # S5.3 主动推送：状态变更/待办停滞 → 站内通知（纯模板，不调模型）
+│   │   ├── handling.py       # 多轮办理状态机（改期/换站点/催办）
+│   │   ├── guard.py / pii.py / ratelimit.py   # S1 安全治理
+│   │   ├── dedupe.py         # 沉淀查重三档判定
 │   │   ├── config.py         # PEP 562 动态配置（DB settings > env > 默认）
 │   │   ├── llm_service.py    # 模型实例缓存（reset_models() 热更新）
 │   │   └── store.py
-│   ├── evals/cases.jsonl     # 37 条标注用例
+│   ├── gate.py               # 回归门禁（快检 / --full 全量，退出码 0/2/3/1）
+│   ├── evals/cases.jsonl     # 42 条标注用例
+│   ├── evals/gate_baseline.json   # 门禁基线（纳管）
+│   ├── smoke_notices.py      # 主动推送模块冒烟（需停服务）
+│   ├── e2e_notices.py        # 主动推送 HTTP 验收（需服务在跑）
 │   ├── web_dist/             # 前端构建产物（FastAPI 挂载 /ui/）
 │   ├── campus_bot.db         # 业务库
 │   ├── checkpoints.db        # LangGraph 检查点
@@ -376,15 +384,27 @@ shadow 旁路本意是只读对比，却会真实创建工单。
 
 ### 3.2 评测
 
-- [ ] **跑命令行评测前先停 uvicorn**（Qdrant `.lock`）
+- [ ] **跑命令行评测前先停 uvicorn**（Qdrant `.lock`）；`python gate.py` 快检是例外（固定管线不碰 Qdrant）
 - [ ] 改之前跑一轮存基线，改之后跑一轮对比
 - [ ] 看 `llm_downgraded`：>0 说明模型有问题，本轮数据不可用
 - [ ] 界面跑：超管登录 →【评测回归】→ 选模式 → 运行（历史记录可对比）
 
 ```bash
 cd D:/校招咨询agent/app
-python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; print(E.run('fixed')['summary'])"
+python gate.py                # 快检：intent+fixed，约 7s，可带服务跑
+python gate.py --full         # 全量：+agent，约 2.5min，先停 uvicorn
+python gate.py --update       # 确认是"变好了"之后刷新基线
 ```
+
+> 退出码：`0` 通过 / `2` 回归 / `3` 环境冲突（向量库打不开，**拒绝给结论**）/ `1` 脚本错误。
+> 看到 3 不要当成通过——那是门禁在告诉你"这一轮信号无效"。
+
+其他一键验证脚本（各管一段，不能互相替代）：
+
+| 脚本 | 前置 | 验什么 |
+|---|---|---|
+| `python smoke_notices.py` | 停服务 | 主动推送的模块逻辑：文案 / 幂等 / 同状态不推 / 冷却分桶 / 已读 |
+| `python e2e_notices.py` | **服务在跑** | 排期验收口径：改状态 → 候选人收到提醒（走真实 HTTP，跑完自动还原） |
 
 ### 3.3 环境工具
 
@@ -410,12 +430,12 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 |---|---|---|---|
 | 评测地基 | 标注集 + 指标 + 管理端跑评测 | ✅ 完成 | `agent/eval.py`、`evals/cases.jsonl`（37 条）、`AdminEval.vue` |
 | Verifier 升级 | 双路核验 + 红线清单 | ✅ 完成 | `agent/verifier.py`（REDLINES 四类 + 双通道裁定） |
-| 引用打点 | **句子级锚点，前端可点开看依据** | 🟡 后端有、前端没消费 | `verifier.py:334` 输出 `sentences`，前端只渲染 `cites` 标签 |
+| 引用打点 | **句子级锚点，前端可点开看依据** | ✅ 完成（2026-10-26，S5.1） | `verifier.py` 输出 `sentences`；`CandidateView.vue` 的「逐句依据 (n)」折叠入口 |
 | 图重构 | plan / 失败分类 / degrade / clarify / 预算 | ✅ 完成 | `graph.py`、`planner.py`、`config.py` 预算常量 |
 | 记忆个性化 | 指代还原 / 画像 / 重复问收敛 | ✅ 完成 | `coref.py`、`memory.py`、图 `context` 节点 |
-| 学习闭环 | 工单沉淀 + 画像沉淀 + 事件触发推送 | 🟡 **部分** | 沉淀与画像有；**去重与主动推送没有** |
+| 学习闭环 | 工单沉淀 + 画像沉淀 + 事件触发推送 | ✅ 完成（2026-10-26） | 沉淀查重 `agent/dedupe.py`、低分回流 `eval.promote_run_to_case`、主动推送 `agent/notices.py` |
 | HITL 审批闭环 | 写操作人工审批 | ✅ **已按方案 A 收口**（删除死代码） | 2026-10-25 删除，`app/.backup_20261025_hitl/` 有备份 |
-| 安全与治理 | 提示词版本化 / 注入检测 / PII 脱敏 / 限流 / 工具权限 | 🟡 **2/5 完成** | 提示词版本化（`agent/prompts/` + `prompt_versions` 表）与注入检测（`agent/guard.py`，提问入口 + 文档导入分块双接入）已交付；脱敏 / 限流 / 权限仍为零 |
+| 安全与治理 | 提示词版本化 / 注入检测 / PII 脱敏 / 限流 / 工具权限 | ✅ **4/5 + HITL 收口**（2026-10-26） | 版本化 `prompts/` + `prompt_versions`；注入检测 `guard.py` 双入口；PII `pii.py` 输入侧掩码；限流 `ratelimit.py` + `rate_events`。工具权限**按方案 A 不做审批**（写操作仅 `create_ticket`，风险可控） |
 | 多轮状态机 | 办理类诉求的显式状态流转 | ✅ **首版已交付**（2026-10-26） | `agent/handling.py` 三槽位状态机 + `handling_sessions` 表；"先办后补"设计，新增 5 条多轮用例，42 条全通过 |
 
 ### 4.2 未完成明细（按优先级）
@@ -440,7 +460,7 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 | # | 缺口 | 说明 |
 |---|---|---|
 | 7 | ~~多轮状态机~~ ✅ 已交付首版 | `agent/handling.py`：改期/换站点/催办三槽位，状态存 `handling_sessions`（24h 有效）。**关键取舍是"先办后补"**——首轮照常建单再追问，绝不拦住建单（否则 #22/#23/#25 等"明确提出就必须办"的用例会掉分）。次轮补充的信息回填到同一张工单，不另建新单 |
-| 8 | **事件触发主动推送** | 状态变更 / 临近截止无任何提醒，系统仍是纯"被动问答"。需要定时任务扫描 + 站内消息/短信通道 |
+| 8 | ~~事件触发主动推送~~ ✅ 已交付（2026-10-26，S5.3） | `agent/notices.py` 两类事件（状态变更 / 待办态停滞）+ 接口即时触发 + 60s 后台兜底。**文案纯模板、不用模型**；数据里没有 deadline，所以落地成"停滞提醒"而不是编一个截止时间。短信通道仍未接，只做站内 |
 
 #### P2 — 可观测性
 
@@ -448,7 +468,7 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 |---|---|---|
 | 9 | ~~句子级锚点前端未消费~~ ✅ 已交付（2026-10-26） | 核验标签后加「逐句依据 (n)」折叠入口，逐句显示原句 + 依据句。**教训：后端早就算好了 `sentences` 却无消费方，这类信号要定期清点** |
 | 10 | ~~线上低分样本不回流~~ ✅ 已交付（2026-10-26） | `GET /api/admin/agent_runs/low` + `POST /api/admin/evals/promote` + 管理端面板。回流标注取实际运行结果，`must` 留空由人工补 |
-| 11 | 回归门禁靠人记得跑 | 没有"改了 `agent/` 就自动跑一轮"的机制。评测入口 `app/run_eval.py` 已就位，差自动钩子 |
+| 11 | ~~回归门禁靠人记得跑~~ ✅ 已交付（2026-10-26，S4.5） | `app/gate.py` 两档门禁 + `.githooks/pre-commit`；只在暂存区含 `app/agent/`、`app/evals/`、`gate.py`、`run_eval.py`、`main.py` 时触发。基线 `app/evals/gate_baseline.json` 纳管 |
 
 #### 新增工程债（S5 期间发现并已修）
 
@@ -477,6 +497,8 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 | 26 | **存量数据回填口径过粗，把"种子数据"标成了"人工添加"**（2026-10-26 已修） | S2 给 `faqs` 加 `source` 列时，存量回填写成"一律 `manual`"，而这些存量恰恰是上一轮灌进去的**种子条目**。后果：16 条 FAQ 全是 `manual`、`kb_seed` 为 0——后台来源筛选看不出哪些是基准数据，"按来源整体回滚"也分不清哪些能安全清掉（S2.2 的标记形同虚设）。<br>**修法**：`main.py` 新增 `_relabel_seed_source()`（启动跑一次、幂等，按问题原文比对回填 `kb_seed`）；`seed()` 改为**总是调用**（知识库非空时早退）——必须先跑一趟才能把 `SEED_FAQS` 填好给校正函数用。<br>**教训**：**给存量数据加标记列时，"回填什么值"要想清楚**——用"一律 X"省事，但会把已有数据的语义抹平，而且这种错误不会报错、只会让功能悄悄失真，只能在"用这个功能时觉得不对劲"才被发现 |
 | 27 | **门禁最危险的失效不是漏跑，是假绿灯——分数比真基线还高**（2026-10-26，S4.5 设计门禁时实测） | 设计门禁时做的第一个实验就撞上了：**uvicorn 运行时跑全量评测，agent 模式给出 42/42 = 100%**，而真实基线是 95.2%。原因很反直觉：Qdrant 文件锁被占 → `search()` 静默降级成纯关键词 → 命中的恰恰是**字面高度匹配**的条目 → 模型据此作答，反而更容易命中 `must` 里那些**同样按字面措辞写的断言**。**用关键词评测关键词，当然满分。**<br>**结论**：假绿灯不只是"没测到"，而是**分数虚高、比真基线还好看**，比红灯危险得多——它让人以为有保护。<br>**修法**：给 `retrieval` 加降级计数（`client_error` / `dense_fallback` / `dense_ok`），全量档位强制校验，打不开就判**环境冲突（退出码 3）拒绝给结论**，而不是降级放行。<br>**原则**：**拿不到有效信号时，门禁应当拒绝给结论。一个会撒谎的门禁比没有门禁更糟。** |
 | 28 | **删内部字段是打地鼠，根因是"给模型看了结构化数据"**（2026-10-26 已修） | 第 25 条删掉了工具返回里的 `source`，以为根治了回显。门禁首跑立刻抓到 #24 仍然 `internal_leak`——模型抄的是 **JSON 这个壳子**：「依据条目：`{"question": "可以更换投递岗位吗？"}`」。<br>**删掉一个内部字段，模型就抄剩下的结构**——因为 JSON 就在眼前，而模型要复述依据，照抄是最省力的选择。<br>**修法：把"给模型看的"和"给框架用的"拆成两条通道。** `knowledge_search` 返回**自然语言**（只有问题与答案），结构化命中（含 `score`）走 `tools.take_kb_hits()` 旁路，供引用与看板使用——模型从头到尾看不见。<br>**注意**：引用事件里原来带的 `score` 也一并去掉了。取不到就别填，**恒定输出 0 比不输出更糟，那是在撒谎**。<br>**教训**：模型的"照抄倾向"针对的是**结构**，不是某个字段。判断标准应该是"这份数据模型需不需要复述"——需要复述的，就绝不能给结构化形式。 |
+| 29 | **新加的定时扫描，第一次跑就会把存量历史当新事件全部补发**（2026-10-26，S5.3 设计时避免） | 主动推送靠"扫 `status_history` 里 id > 游标的新记录"驱动。但库里**已经有 42 条历史状态记录**，游标初值是 0 → 首轮扫描会把它们全当成新事件，**一夜之间给所有人补发一遍"你的进度更新了"**，而且时间戳是当时的，候选人会以为流程诈尸。<br>**修法**：无游标时走 bootstrap——只把游标推到 `MAX(id)` 就返回，不生成任何通知。落游标的时机在**同一事务**里，避免中途异常留下"半个游标"。<br>**教训**：任何"从某个位置继续往后读"的设计（游标 / 水位线 / last_seen_id / offset），**都必须先回答"首次启动时这个位置从哪来"**。默认 0 等于把那之前的全部数据当作未处理。 |
+| 30 | **系统通知不要写进对话表**（2026-10-26，S5.3 设计时避免） | 最省事的做法是把通知插进 `messages`（`role='system'`），前端现成的渲染直接用。但这个项目的 `messages` **不只是展示**：`memory.last_user_question()` 靠它做指代还原，评测的 `_seed_history()` 靠它播种多轮上下文，`eval_worker` 的 debug 还按条数核对。塞进系统通知 → 指代还原可能把通知当"上一轮用户提问"→ 多轮用例集体失真。<br>**修法**：独立 `notices` 表 + 自己的读接口，`messages` 一个字节不动。<br>**判断标准**：**"这张表除了给人看，还有谁在读？"** 只要还有机器消费方（模型、评测、统计），它就不是展示层，不能往里混人写的内容。 |
 | 18 | **「免费额度耗尽」只针对单个模型，换模型名就能继续免费用** | 百炼免费额度是**每款模型各 100 万 Token**。实测 `qwen3.8-flash`/`qwen3.7-flash` 已耗尽，但 `qwen-flash`、`qwen3.5-flash`、`qwen-plus`、`qwen-max` 仍可用。**不要一看到 403 就去充值**，先逐个试模型名（见 §2.6 故障 C） |
 | 19 | **单条用例间歇性挂起，120s 护栏兜不住** | 现象：某轮 42 条里 #31 卡了 **1417 秒**才返回（同一条用例在前一轮只花 5.9s），导致整轮评测从 134s 拖到 1668s。根因：预算只在**节点边界**检查，单次 LLM / Embedding 调用内部挂起时无法中断，而 Python 线程也没法被杀掉。**判定指纹：某条用例耗时呈数量级异常（百秒~千秒级），其余正常**。缓解方向：给 httpx 客户端设更短的 read timeout + 兜底用子进程跑单条用例（可 kill） |
 
@@ -501,8 +523,11 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 |---|---|---|---|---|---|
 | intent | 30 | **100%** | 56ms | 10ms | 稳定，多轮复跑一致 |
 | fixed | 30 | **100%** | 74ms | 51ms | 稳定，多轮复跑一致 |
-| agent | 42 | **95.2%**（`--repeats 3`） | 3.3s | 6.4s | 口径修好后**可用作门禁**，见下方说明 |
+| agent | 42 | **97.6%（41/42，run #95）** | 3.3s | 6.4s | 唯一失败 #33 在 `gate_baseline.json` 白名单内 |
 
+> 基线已**脚本化纳管**：`app/evals/gate_baseline.json`（`python gate.py` 快检 / `--full` 全量，
+> `--update` 刷新）。数据以该文件为准，本表只作参考——**别再手抄通过率当基线**。
+>
 > ✅ **agent 模式自 2026-10-26（run #49）起可以当回归门禁**，前提是**必须带 `--repeats 3`**。
 >
 > 历史背景（口径修好之前，**以下数据已作废，仅作教训留存**）：
@@ -533,6 +558,6 @@ python -c "import sys; sys.path.insert(0,'.'); from agent import eval as E; prin
 
 ## 6. 给接手人的三句话
 
-1. **先跑评测再改代码**。这个项目最有价值的资产不是 Agent 图，而是 37 条标注 + 三模式评测引擎——它能在 5 分钟内告诉你改动是变好还是变坏。
+1. **先跑评测再改代码**。这个项目最有价值的资产不是 Agent 图，而是 42 条标注 + 三模式评测引擎 + 两档门禁（`python gate.py` 7 秒 / `--full` 2.5 分钟）——它能在几分钟内告诉你改动是变好还是变坏。
 2. **外部模型不可信**。所有 LLM 调用路径都必须有规则兜底和降级路径，且降级要在指标上可见（`llm_downgraded`），否则你会把"供应商故障"误读成"能力退化"。
 3. **"我改了没生效" 先怀疑缓存和部署方式**，再怀疑代码。本项目一半的"功能 bug"最终都定位到清理式部署没做、或者用户浏览器缓存了旧 `index.html`。
