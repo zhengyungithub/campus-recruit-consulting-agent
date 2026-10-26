@@ -44,7 +44,21 @@ _SENT_SPLIT = re.compile(r"[。！？!?\n]+|[；;](?=\s*\S)")
 _PROMISE = r"(保证|確保|确保|一定能|肯定会|一定会|必定会|包[过过]|稳了|没问题[,，]?你|放心[,，]?你)"
 _OFFER = r"(录用|录取|被录|入职|入职通知|通过面试|拿到 ?offer|发放 ?offer|发 ?offer|签约|签三方|网签成功)"
 _DENY = r"(不保证|无法保证|不敢保证|不能保证|不确定|不代表)"
-_DATEWORD = r"(明天|后天|今天|下周|本周|下[一二三四五六日天]|本周[一二三四五六日天]|\d{1,2}月\d{1,2}[日号]|\d{1,2}[/-]\d{1,2})"
+# 日期词分两类，**相对时长（N 个工作日 / N 天内）必须算进来**：
+# 第 S5.3 轮实测里模型答"通常在复试结束后 7 个工作日内，会完成录用审批并发出 offer"，
+# 而知识库只说"审批通过后制作 offer 发放表"，压根没有 7 个工作日这个数。
+# 旧版不认"N 个工作日"（只认 明天/下周/X月X日），这句直接放行——
+# 候选人会拿着"7 个工作日"去质问 HR，这是本项目最硬的一条红线。
+_DATEWORD = (
+    r"(明天|后天|今天|下周|本周|下[一二三四五六日天]|本周[一二三四五六日天]"
+    r"|\d{1,2}月\d{1,2}[日号]|\d{1,2}[/-]\d{1,2}"
+    # N 个工作日 / N 个自然日 / N 天 / N 周 / N 个月，含中文数字与"左右/以内/之内"后缀
+    r"|[\d一二两三四五六七八九十]+\s*个?\s*(?:工作日|自然日|天|周|星期|月)\s*(?:内|以内|之内|左右|之内|后)?"
+    r")")
+
+# 触发词同样放宽：真实回答很少说"保证/一定"，最常见的是"通常在…会…""一般要…""预计…"。
+# 只认承诺词等于只拦最不像人话的那种说法。
+_DATE_CLAIM = r"(保证|确保|一定|肯定|将于|会于|计划于|通常|一般|正常(?:情况)?下|预计|大概|大约|最晚|不超过)"
 
 _PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 _IDCARD = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
@@ -139,6 +153,10 @@ def scan_redlines(answer: str, allow_values: list | None = None,
     """
     allow = set(allow_values or [])
     ctx_all = "\n".join(contexts or [])
+    # 依据比对要抗空格差异：知识库写"7 个工作日"、模型写"7个工作日"是同一件事，
+    # 字面包含判断会把它当成"依据里没有"而误判红线。红线误伤的代价很高
+    # （一次改写 + 二次仍踩就降级），值得多这一步归一化。
+    ctx_norm = re.sub(r"\s+", "", ctx_all)
     hits = []
     seen = set()
 
@@ -155,10 +173,10 @@ def scan_redlines(answer: str, allow_values: list | None = None,
         # ① 越权承诺：承诺词 + 录用词，且没有被否定词裹住
         if re.search(_PROMISE, sent) and re.search(_OFFER, sent) and not re.search(_DENY, sent):
             _add("promise_offer", sent)
-        # ② 确定性排期：承诺词/肯定词 + 具体日期词，且依据里没有这个日期
-        if re.search(r"(保证|确保|一定|肯定|将于|会于|计划于)", sent) and re.search(_DATEWORD, sent):
+        # ② 确定性排期：断言口吻 + 具体时间词，且依据里没有这个时间
+        if re.search(_DATE_CLAIM, sent) and re.search(_DATEWORD, sent):
             for d in re.findall(_DATEWORD, sent):
-                if d not in ctx_all:
+                if re.sub(r"\s+", "", d) not in ctx_norm:
                     _add("invent_schedule", sent)
                     break
         # ③ 个人标识

@@ -179,6 +179,20 @@ def before_turn(cid: int, question: str) -> dict:
     return {"filled": value, "note": note, "session": sess, "ticket_id": sess["ticket_id"]}
 
 
+def already_said(answer: str, text: str) -> bool:
+    """回答里是否已经问过同一句，用于避免重复追问。
+
+    S5.3 实测：模型自己在末尾问了"方便告诉我你想改到哪一天/哪个时段吗？"，
+    状态机又追加了一遍同一句，候选人看到同一问题问两次。
+    判据用去标点后的前 8 字指纹——足够特异（"方便告诉我你想改"），
+    又不会被"另外/此外"这类连接词差异影响。
+    """
+    norm = lambda s: re.sub(r"[，。！？、；：\s（）()【】「」“”\"'…·]", "", s or "")  # noqa: E731
+    a = norm(answer)
+    b = re.sub(r"^(另外|此外|还有)", "", norm(text))
+    return len(b) >= 8 and b[:8] in a
+
+
 def after_turn(cid: int, question: str, intent: str, ticket_id) -> str:
     """本轮结尾：办理类诉求若槽位缺失 → 开会话并返回追问语（追加到回答末尾）。"""
     if intent != "human_handoff":

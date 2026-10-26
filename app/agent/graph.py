@@ -650,14 +650,15 @@ def run_agent(cid: int, question: str, thread_id: str, use_history: bool = True)
                           "memory_enabled": use_history}, cfg)
     answer = final.get("answer", "")
     # 状态机的两段追加：① 槽位补齐的确认语；② 新开办理事项的追问语
-    if pre.get("note"):
+    # 两处都要去重：模型自己可能已经把同一句问过一遍，再追加就是同一问题问两次。
+    if pre.get("note") and not handling.already_said(answer, pre["note"]):
         answer = (answer or "").rstrip() + pre["note"]
         emit({"type": "stage", "name": "handling",
               "label": f"🧩 已补充：{pre.get('filled')}（工单 #{pre.get('ticket_id')}）"})
     intent_now = final.get("intent", "") or (final.get("intent_meta") or {}).get("intent", "")
     if use_history:
         ask = handling.after_turn(cid, question, intent_now, _last_ticket_id(final, cid))
-        if ask:
+        if ask and not handling.already_said(answer, ask):
             answer = (answer or "").rstrip() + ask
             emit({"type": "stage", "name": "handling", "label": "🧩 办理信息待补充，已追问"})
     if answer and use_history:

@@ -30,6 +30,18 @@ _BARE_QUESTION = re.compile(
     r"|我呢|为什么|为啥|咋办|咋弄)[？?。!！\s]*$")
 # 主题词最小长度：短于此认为没主题信息
 _MIN_SELF_SUFFICIENT = 7
+# 判"剥掉指代词后是否还缺主题"用的疑问词表。
+# 判据不是长度而是**疑问词前面有没有实体**：
+#   "offer 什么时候发" —— 疑问词前面有 "offer"，主题自带，不用拼
+#   "要多久能出结果"   —— 疑问词贴着句首，说明在问上一轮那件事，必须拼
+# 只看长度会翻车：门禁 #34「那这个要多久能出结果」剥完是"要多久能出结果"（够长），
+# 但它仍然没有主题，第一版就因此把 #34 判挂。
+_QWORD_AT = re.compile(r"(什么|哪些|哪个|哪里|怎么|如何|多久|多长时间|什么时候|啥时候"
+                       r"|几号|几天|为什么|为啥|能不能|可以吗)")
+# 疑问词前至少要有这么多字符，才认为它前面挂着实体主题
+_MIN_TOPIC_PREFIX = 4
+# 剥完句首指代后，句中若仍留这些词，说明指的仍是上一轮的事，必须还原
+_RESIDUAL_REF = re.compile(r"(这个|那个|它|这些|那些|该|此|上述|上面|刚才|前面)")
 # 这些词即使在句里也不算有主题 assures
 _FILLER = re.compile(r"^(你好|您好|谢谢|好的|嗯|哦|明白|知道啦|ok|OK|收到)")
 
@@ -67,6 +79,17 @@ def resolve(question: str, prev_question: str = "", prev_topic: str = "") -> dic
     m = _REF_HEAD.match(t)
     if m:                                   # 剥掉指代词，用主题接上
         rest = _TAIL.sub("", t[m.end():].strip())
+        # 剥掉指代词后剩下的话本身已经是一个完整问题，就不要再拼上一轮主题。
+        # 反例（S5.3 实测）：上一轮"复试要准备些什么？"，这一轮"那 offer 什么时候发？"
+        # ——"那"只是口语转折，不是指代；硬拼成"复试要准备些offer 什么时候发"去检索，
+        # 命中被稀释、意图被判成 kb_qa，最终模型拿不到"你当前在已约复试"这个关键事实。
+        qm = _QWORD_AT.search(rest)
+        self_sufficient = (len(rest) >= _MIN_SELF_SUFFICIENT
+                           and not _RESIDUAL_REF.search(rest)
+                           and qm is not None and qm.start() >= _MIN_TOPIC_PREFIX)
+        if self_sufficient:
+            return {"question": rest, "original": original, "resolved": False,
+                    "anchor": anchor}
         newq = f"{anchor}{rest}" if rest else anchor
     else:                                   # 纯疑问谓语：主题前置
         rest = _TAIL.sub("", t.strip())
