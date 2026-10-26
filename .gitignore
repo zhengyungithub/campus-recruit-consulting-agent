@@ -28,6 +28,11 @@ venv/
 
 # ---- 备份目录（本地留存，不入库）----
 .backup_*/
+*.bak
+
+# ---- WorkBuddy / 工具产物 ----
+.playwright-cli/
+*.genie
 
 # ---- 编辑器 / 系统 ----
 .vscode/
