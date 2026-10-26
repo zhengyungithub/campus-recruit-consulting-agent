@@ -47,10 +47,13 @@ def _knowledge_search(candidate_id, query: str):
     hits = retrieval.search(query, k=4)
     if not hits:
         return json.dumps({"results": [], "note": "知识库未命中"}, ensure_ascii=False)
+    # 注意：**不要把 source（hybrid/dense/keyword 融合模式）放进返回**。
+    # 它是纯内部元数据，对作答毫无帮助，但模型会照抄进答案回显给用户
+    # （实测出现「依据条目：xxx（来源：hybrid）」，被 internal_leak 红线判负）。
+    # 内部字段一律不进模型视野——这是"不把内部实现暴露给用户"的第一道闸。
     return json.dumps({"results": [
-        {"question": h["question"], "answer": h["answer"],
-         "score": h["hybrid"], "source": h["source"]} for h in hits]},
-        ensure_ascii=False)
+        {"question": h["question"], "answer": h["answer"], "score": h["hybrid"]}
+        for h in hits]}, ensure_ascii=False)
 
 
 class ProgressArgs(BaseModel):

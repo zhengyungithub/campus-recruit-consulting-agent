@@ -7,21 +7,21 @@
 {"id": 7, "q": "我现在处于什么环节", "intent": "progress_query", "cite": false, "ticket": false, "must": [], "must_not": []}
 {"id": 8, "q": "校招的流程是什么", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["初筛", "测评", "面试"], "must_not": [], "tools": ["knowledge_search"]}
 {"id": 9, "q": "初面是什么形式", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["腾讯会议"], "must_not": []}
-{"id": 10, "q": "我错过了约定的面试时间怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["联系面试官"], "must_not": ["已为你生成反馈工单", "已为你提交反馈工单", "已创建反馈工单", "已转人工"]}
+{"id": 10, "q": "我错过了约定的面试时间怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": [["联系面试官", "联系 HR", "与面试官沟通", "沟通改期"]], "must_not": ["已为你生成反馈工单", "已为你提交反馈工单", "已创建反馈工单", "已转人工"]}
 {"id": 11, "q": "复试在哪里进行", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["线上", "线下"], "must_not": []}
 {"id": 12, "q": "面试资料包括哪些", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["身份证", "成绩单"], "must_not": [], "tools": ["knowledge_search"]}
 {"id": 13, "q": "面试资料怎么上传", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["短信"], "must_not": []}
-{"id": 14, "q": "面试资料审核不通过怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["重新上传"], "must_not": []}
+{"id": 14, "q": "面试资料审核不通过怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": [["重新上传", "重新提交", "再次上传", "重新传"]], "must_not": []}
 {"id": 15, "q": "体检资料有什么要求", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["体检报告"], "must_not": []}
 {"id": 16, "q": "意向沟通会是什么", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["岗位", "待遇"], "must_not": []}
 {"id": 17, "q": "offer 什么时候发", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["审批"], "must_not": []}
 {"id": 18, "q": "网签怎么操作", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["应约", "三方"], "must_not": []}
 {"id": 19, "q": "纸质三方协议什么时候寄回", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["寄"], "must_not": []}
-{"id": 20, "q": "测评链接失效了怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["留言", "重新发送"], "must_not": []}
-{"id": 21, "q": "校招结果在哪里查询", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["我的进度"], "must_not": []}
+{"id": 20, "q": "测评链接失效了怎么办", "intent": "kb_qa", "cite": true, "ticket": false, "must": [["留言", "联系工作人员", "反馈"], ["重新发送", "重新发", "补发"]], "must_not": []}
+{"id": 21, "q": "校招结果在哪里查询", "intent": "kb_qa", "cite": true, "ticket": false, "must": [["我的进度", "进度查询", "查询进度"]], "must_not": []}
 {"id": 22, "q": "帮我改一下面试时间", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": [], "tools": ["create_ticket"]}
 {"id": 23, "q": "我想换个面试站点", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
-{"id": 24, "q": "可以更换投递岗位吗", "intent": "kb_qa", "cite": true, "ticket": false, "must": ["人工评估", "工作人员"], "must_not": []}
+{"id": 24, "q": "可以更换投递岗位吗", "intent": "kb_qa", "cite": true, "ticket": false, "must": [["人工评估", "工作人员", "人工审核"]], "must_not": []}
 {"id": 25, "q": "帮我催一下进度，很急", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
 {"id": 26, "q": "转人工", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}
 {"id": 27, "q": "HR的联系电话是多少", "intent": "human_handoff", "cite": false, "ticket": true, "must": [], "must_not": []}

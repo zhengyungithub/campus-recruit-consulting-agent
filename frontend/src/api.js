@@ -122,7 +122,10 @@ export const api = {
   }),
   // 评测回归（超管）
   evalCases: () => request('/api/admin/eval/cases', { auth: admin.token }),
-  evalRun: (mode, limit = 0) => request('/api/admin/eval/run', { method: 'POST', body: { mode, limit }, auth: admin.token }),
+  // repeats：多数投票次数（默认后端 agent=3 / 其余=1），用于区分"真回归"与"模型抖动"
+  evalRun: (mode, limit = 0, repeats = 0) => request('/api/admin/eval/run', {
+    method: 'POST', body: { mode, limit, repeats }, auth: admin.token
+  }),
   evalRuns: () => request('/api/admin/eval/runs', { auth: admin.token }),
   evalRunDetail: id => request(`/api/admin/eval/runs/${id}`, { auth: admin.token }),
   // 第5期：线上低分样本回流

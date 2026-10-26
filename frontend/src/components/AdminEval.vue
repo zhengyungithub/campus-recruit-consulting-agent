@@ -13,6 +13,13 @@
         <el-input-number v-model="limit" :min="0" :max="200" size="small" controls-position="right"
                          style="width:120px" />
         <span class="tip">条数（0=全部）</span>
+        <span class="tip">多数投票</span>
+        <el-select v-model="repeats" size="small" style="width:110px">
+          <el-option :value="0" label="默认" />
+          <el-option :value="1" label="1 次" />
+          <el-option :value="3" label="3 次取 2" />
+          <el-option :value="5" label="5 次取 3" />
+        </el-select>
         <el-button type="primary" size="small" :loading="running" @click="doRun">运行评测</el-button>
       </div>
     </el-card>
@@ -32,6 +39,15 @@
         <div v-if="summary.mode==='agent'" class="kpi"><div class="kpi-v" :class="summary.degraded ? 'warn' : 'ok'">{{ summary.degraded || 0 }}</div><div class="kpi-k">降级兜底次数</div></div>
         <div class="kpi"><div class="kpi-v">{{ summary.avg_latency_ms }}ms</div><div class="kpi-k">平均耗时</div></div>
         <div class="kpi"><div class="kpi-v">{{ summary.p95_latency_ms }}ms</div><div class="kpi-k">P95 耗时</div></div>
+        <!-- 多数投票：首次通过率与稳定通过率的差，就是"模型抖动"造成的假失败量 -->
+        <div v-if="summary.retry_used" class="kpi">
+          <div class="kpi-v" :class="summary.single_rate >= 0.95 ? 'ok' : 'warn'">{{ pct(summary.single_rate) }}</div>
+          <div class="kpi-k">首次通过率</div>
+        </div>
+        <div v-if="(summary.flaky_cases || []).length" class="kpi">
+          <div class="kpi-v warn">{{ summary.flaky_cases.length }}</div>
+          <div class="kpi-k">抖动用例（时好时坏）</div>
+        </div>
       </div>
       <div class="by-intent">
         <el-tag v-for="(v, k) in summary.per_intent" :key="k" size="small" effect="plain"
@@ -206,7 +222,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
 
-const mode = ref('intent'), limit = ref(0), running = ref(false)
+const mode = ref('intent'), limit = ref(0), running = ref(false), repeats = ref(0)
 const summary = ref(null), details = ref([]), runId = ref(null)
 const runs = ref([]), onlyFail = ref(true)
 
@@ -222,7 +238,7 @@ const vtype = s => ({ pass: 'success', partial: 'warning', fail: 'danger', block
 async function doRun() {
   running.value = true
   try {
-    const r = await api.evalRun(mode.value, limit.value)
+    const r = await api.evalRun(mode.value, limit.value, repeats.value)
     runId.value = r.run_id
     summary.value = r.summary
     details.value = r.details

@@ -700,7 +700,11 @@ def eval_cases(request: Request):
 
 @app.post("/api/admin/eval/run")
 def eval_run(request: Request, body: dict):
-    """跑一轮评测回归；mode=intent 最便宜，agent 最贵（真实调工具，用独立账号跑完清理）"""
+    """跑一轮评测回归；mode=intent 最便宜，agent 最贵（真实调工具，用独立账号跑完清理）
+
+    repeats：多数投票次数，默认 agent=3 / 其余=1。agent 模式建议保持 3——
+    单次通过率会因模型采样抖动 ±4 条，多数裁决才能区分"真回归"与"这一次手滑"。
+    """
     auth_super(request)
     from agent.eval import run, save_run
     mode = (body.get("mode") or "intent").strip()
@@ -710,7 +714,12 @@ def eval_run(request: Request, body: dict):
         limit = int(body.get("limit") or 0)
     except Exception:
         limit = 0
-    r = run(mode=mode, limit=limit)
+    try:
+        repeats = int(body.get("repeats") or (3 if mode == "agent" else 1))
+    except Exception:
+        repeats = 3 if mode == "agent" else 1
+    repeats = max(1, min(repeats, 5))
+    r = run(mode=mode, limit=limit, repeats=repeats)
     if r.get("error"):
         raise HTTPException(400, r["error"])
     rid = save_run(r)

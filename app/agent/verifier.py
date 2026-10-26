@@ -52,6 +52,11 @@ _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _INTERNAL = re.compile(
     r"(knowledge_search|get_my_progress|create_ticket|list_my_tickets|tool_call|function_call"
     r"|thread_id|candidate_id|agent_steps|\{[\"']?[a-z_]{3,}[\"']?\s*:)", re.I)
+# 检索融合模式是内部元数据，模型照抄成「来源：hybrid」回显给用户要拦。
+# 写得**很窄**（只认这几个枚举值），否则正常的「来源：知识库」会被误伤——
+# 红线一旦误伤就是"给一次改写机会 + 二次降级"，代价很高。
+_INTERNAL_SOURCE = re.compile(
+    r"(来源|source|来源字段)\s*[:：]\s*(hybrid|dense|keyword|bm25|vector|qdrant)", re.I)
 
 REDLINE_RULES = [
     {"code": "promise_offer", "name": "承诺录用结果",
@@ -164,7 +169,7 @@ def scan_redlines(answer: str, allow_values: list | None = None,
                     continue
                 _add("privacy", f"{tag} {val[:6]}****")
         # ④ 内部实现泄漏
-        m = _INTERNAL.search(sent)
+        m = _INTERNAL.search(sent) or _INTERNAL_SOURCE.search(sent)
         if m:
             _add("internal_leak", m.group(0))
 

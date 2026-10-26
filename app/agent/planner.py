@@ -25,6 +25,12 @@ STEP_TEMPLATES = {
 }
 VALID_TOOLS = set(STEP_TEMPLATES)
 
+# S4.4：只读工具 = 可以"规则兜底自动执行"的工具。
+# 判定标准只有一条：**没有副作用**。查知识库、查进度、查工单，重复执行顶多浪费一次检索；
+# 而 create_ticket 会真的落一张工单（脏数据且不可撤销），所以**永不自动执行**，
+# 只认模型决策 + handling 状态机。这条边界必须在代码里写死，不能靠提示词约束。
+READ_ONLY_TOOLS = {"knowledge_search", "get_my_progress", "list_my_tickets"}
+
 # 意图 → 默认步骤模板（goal 是给 Agent 看的"这一步要拿到什么"）
 INTENT_PLANS = {
     "greeting": [],
@@ -121,9 +127,40 @@ def rule_plan(question: str, intent: str) -> dict:
         steps = list(INTENT_PLANS.get(intent, []))
     if not steps and multi:                      # 兜底：复合但子任务未识别，退回意图模板
         steps = list(INTENT_PLANS.get(intent, []))
+    _mark_required(steps)
+    return {"source": "rule", "multi": multi, "subtasks": subs, "steps": steps}
+
+
+def _mark_required(steps: list):
+    """给步骤打必做标记：只读步骤才是"必做"，写操作只是"可选待办"。
+
+    必做的含义：模型本轮若没执行，框架会替它补执行（见 graph.node_force_act）。
+    写操作进了必做清单就等于"每次都自动建单"，所以这里必须排掉。
+    """
     for s in steps:
         s.setdefault("goal", STEP_TEMPLATES.get(s["tool"], ""))
-    return {"source": "rule", "multi": multi, "subtasks": subs, "steps": steps}
+        s["required"] = s["tool"] in READ_ONLY_TOOLS
+
+
+def pending_required(plan: dict, tool_trace: list) -> list:
+    """返回计划里"必做但本轮还没执行"的步骤。
+
+    只在下面两个条件同时成立时非空（由调用方判断时机）：
+      ① 模型本轮没有发起任何工具调用（即"没查就答"）；
+      ② 这些步骤确实是只读的。
+    工具调用过就不再补执行——模型可能用了不同参数或不同工具，重复检索没有收益。
+    """
+    if not plan or not plan.get("steps"):
+        return []
+    done = {t.get("tool") for t in (tool_trace or [])}
+    out, seen = [], set()
+    for s in plan["steps"] or []:
+        t = s.get("tool")
+        if t in done or t in seen or not s.get("required") or t not in READ_ONLY_TOOLS:
+            continue
+        seen.add(t)
+        out.append(s)
+    return out
 
 
 def llm_plan(question: str, intent: str) -> Optional[dict]:
@@ -147,6 +184,7 @@ def llm_plan(question: str, intent: str) -> Optional[dict]:
                  for x in (data.get("steps") or []) if x.get("tool") in VALID_TOOLS]
         if not steps:
             return None
+        _mark_required(steps)      # 与规则计划同一套标记口径
         return {"source": "llm", "multi": True, "subtasks": [], "steps": steps[:3]}
     except Exception:
         return None
@@ -181,7 +219,13 @@ def plan_prompt(plan: dict, failures: list, tool_trace: list) -> str:
     done_tools = {t["tool"] for t in (tool_trace or [])}
     lines = []
     for i, s in enumerate(plan["steps"], 1):
-        mark = "✅已完成" if s["tool"] in done_tools else ("（可选）" if s.get("optional") else "⬜待办")
+        if s["tool"] in done_tools:
+            mark = "✅已完成"
+        elif s.get("optional"):
+            mark = "（可选）"
+        else:
+            # S4.4：必做步骤明确标出来——你不做，框架也会替你做一遍，不如你自己调
+            mark = "⬜待办·必做" if s.get("required") else "⬜待办"
         lines.append(f"{i}. {s['tool']} —— {s.get('goal','')} [{mark}]")
     block = "【执行计划】（建议清单，按你的判断增删；已完成的不要重复调用）\n" + "\n".join(lines)
 

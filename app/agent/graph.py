@@ -3,6 +3,7 @@
 图结构：
     START → intent → plan ─┬→ clarify（信息不足反问）→ END
                            └→ agent ⇄ act ─┬→ critic → END
+                                           ├→ force（规则补执行必做只读步骤）→ agent
                                            └→ degrade（超预算/自我修复失败）→ END
                           （critic 未通过且仍有余量 → 回炉补检索）
 
@@ -63,6 +64,8 @@ class AgentState(TypedDict):
     # --- 第2期：红线（Redline）治理 ---
     redline_retries: int  # 因红线回炉重写的次数（红线最多给一次改过机会）
     redline_blocked: bool # 二次仍踩红线：禁止放行，强制降级到固定管线
+    # --- S4.4：规则兜底执行 ---
+    forced_steps: int   # 框架代为执行"必做步骤"的轮数（上限 1，防止回炉死循环）
     # --- 第4期：多轮状态机（改期/换站点/催办的槽位收集） ---
     handling_ctx: str   # 本轮开头算好的"办理中"提示块（避免节点内重复处理）
     handling_filled: bool   # 本轮补齐了槽位：不再建单，只确认
@@ -248,6 +251,90 @@ def node_agent(state: AgentState):
     if not getattr(resp, "tool_calls", None):      # 无工具调用 = 本轮产出最终回答
         upd["answer"] = resp.content or ""
     return upd
+
+
+# S4.4：规则补执行时各工具的默认入参（模型没调，框架得自己造参数）
+FORCE_ARGS = {
+    "knowledge_search": lambda st: {"query": (st.get("resolved_question") or st["question"])[:60]},
+    "get_my_progress": lambda st: {},
+    "list_my_tickets": lambda st: {},
+}
+
+
+def node_force_act(state: AgentState):
+    """S4.4 规则兜底执行：计划里的"必做只读步骤"模型没做，框架替它做。
+
+    为什么需要这一层：
+        实测有 2~3 条用例**稳定**失败（#17 / #21 / #33），症状完全一致——
+        planner 已经规划出 knowledge_search，模型那一步却凭印象直接作答，
+        结果无引用、缺关键事实。这类失败是抖动里唯一稳定的那部分，
+        而且正是真实用户最在意的错误：问政策，机器人张口就来。
+
+    设计取舍（与既有设计一脉相承）：
+        - 只补**只读**工具。检索重复执行顶多浪费一次查询；create_ticket 会真的落一张
+          工单（脏数据、不可撤销），所以永不自动执行——和 handling 状态机在 node_act
+          里硬拦截建单是同一条原则：关键路径上的脏数据分支，规则兜底，不交给模型。
+        - 只补一轮（forced_steps < 1）。补执行后仍答不好就不重复折腾，直接交给核验。
+
+    实现坑：结果用 **HumanMessage** 回灌，不能用 ToolMessage——
+        上一条 AIMessage 没有 tool_calls，挂上 ToolMessage 会因 tool_call_id 失配
+        被 DashScope 兼容层直接拒掉（第1期踩过）。
+    """
+    pend = planner.pending_required(state.get("plan") or {}, state.get("tool_trace") or [])
+    if not pend:                      # 理论上路由已保证非空，这里再兜一次防状态漂移
+        return {"forced_steps": (state.get("forced_steps") or 0) + 1}
+
+    lines, cites, trace, results, failures, done = [], [], [], [], [], []
+    for s in pend:
+        name = s["tool"]
+        tool = TOOLS_REGISTRY.get(name)
+        if tool is None:
+            continue
+        args = FORCE_ARGS.get(name, lambda st: {})(state)
+        try:
+            result = tool.invoke(args, config={"configurable": {
+                "candidate_id": state["candidate_id"], "emit": emit}})
+        except Exception as e:
+            failures.append({"tool": name, "kind": "exception",
+                             "advice": f"规则补执行异常：{e!r}"[:160]})
+            continue
+        results.append({"tool": name, "args": args, "result": result})
+        trace.append({"tool": name, "args": args})
+        done.append(name)
+        if name == "knowledge_search":
+            # 检索结果转成自然语言再回灌：**不要把裸 JSON 塞给模型**。
+            # 模型有照抄的倾向，原样给它 JSON 就等于邀请它把 {"score": ...} 写进答案，
+            # 触发 internal_leak 红线（实测 #24 就是这样被判负的）。
+            try:
+                items = json.loads(result).get("results") or []
+            except Exception:
+                items = []
+            if items:
+                lines.append("知识库检索到以下依据：\n" + "\n".join(
+                    f"{i}. 问：{r.get('question','')}\n   答：{r.get('answer','')}"
+                    for i, r in enumerate(items, 1)))
+                for r in items:
+                    if r.get("question") not in {c.get("question") for c in cites}:
+                        cites.append(r)
+            else:
+                lines.append("知识库检索未命中任何条目（依据为空）。")
+        else:
+            lines.append(f"{name} 的结果：{result}")
+
+    if not lines:                     # 全挂了：别把空消息塞给模型，直接放它去核验
+        return {"forced_steps": (state.get("forced_steps") or 0) + 1, "failures": failures}
+
+    emit({"type": "stage", "name": "force", "label": "⚙️ 规则补执行：" + "、".join(done)})
+    emit({"type": "forced_tools", "tools": done})
+    body = ("（系统已代你执行本轮必做的查询步骤，结果如下。"
+            "请**严格依据这些结果作答**，不要凭印象补充；"
+            "结果里确实没有答案的，就明确告知并建议转人工，不要编。）\n\n"
+            + "\n\n".join(lines))
+    return {"messages": [HumanMessage(content=body[:4000])],
+            "citations": cites, "tool_trace": trace, "tool_results": results,
+            "failures": failures,
+            "forced_steps": (state.get("forced_steps") or 0) + 1,
+            "answer": ""}             # 作废"没查就答"的那一版，让模型据此重答
 
 
 def _cached_result(state, tool_name, args):
@@ -445,12 +532,23 @@ def route_after_agent(state: AgentState):
         return "degrade"
     last = state["messages"][-1]
     if not getattr(last, "tool_calls", None):
+        # S4.4：模型"没查就答"且计划里还有必做的只读步骤 → 先让规则补执行，
+        # 拿回依据再让它重答。只补一轮（forced_steps），避免回炉死循环。
+        if (state.get("forced_steps") or 0) < 1 and not budget_exceeded(state) \
+                and planner.pending_required(state.get("plan") or {},
+                                             state.get("tool_trace") or []):
+            return "force"
         return "verify"
     return "degrade" if budget_exceeded(state) else "act"
 
 
 def route_after_act(state: AgentState):
     # 工具已执行完仍未产出回答，且预算用尽 → 直接兜底，别再空转
+    return "degrade" if budget_exceeded(state) else "agent"
+
+
+def route_after_force(state: AgentState):
+    """补执行完回到 agent 重答；预算已耗尽则直接兜底"""
     return "degrade" if budget_exceeded(state) else "agent"
 
 
@@ -471,6 +569,7 @@ def build_graph():
     g.add_node("clarify", node_clarify)
     g.add_node("agent", node_agent)
     g.add_node("act", node_act)
+    g.add_node("force", node_force_act)   # S4.4：规则兜底执行"必做只读步骤"
     g.add_node("verify", node_critic)
     g.add_node("degrade", node_degrade)
     g.add_edge(START, "context")
@@ -479,8 +578,11 @@ def build_graph():
     g.add_conditional_edges("plan", route_after_plan, {"agent": "agent", "clarify": "clarify"})
     g.add_edge("clarify", END)
     g.add_conditional_edges("agent", route_after_agent,
-                            {"act": "act", "verify": "verify", "degrade": "degrade"})
+                            {"act": "act", "verify": "verify", "degrade": "degrade",
+                             "force": "force"})
     g.add_conditional_edges("act", route_after_act, {"agent": "agent", "degrade": "degrade"})
+    g.add_conditional_edges("force", route_after_force,
+                            {"agent": "agent", "degrade": "degrade"})
     g.add_conditional_edges("verify", route_after_verify,
                             {"agent": "agent", "degrade": "degrade", END: END})
     g.add_edge("degrade", END)
@@ -547,7 +649,7 @@ def run_agent(cid: int, question: str, thread_id: str, use_history: bool = True)
                           "revisions": 0, "intent": "", "intent_meta": {},
                           "plan": {}, "agent_steps": 0, "started_at": time.time(),
                           "degraded": False, "failed": False, "clarify": "",
-                          "redline_retries": 0, "redline_blocked": False,
+                          "redline_retries": 0, "redline_blocked": False, "forced_steps": 0,
                           "resolved_question": question, "referent": "", "repeat": False,
                           "profile": "", "context_block": "",
                           "handling_ctx": pre.get("context", ""),
@@ -572,6 +674,8 @@ def run_agent(cid: int, question: str, thread_id: str, use_history: bool = True)
             "verify": final.get("verify", {}), "tool_trace": final.get("tool_trace", []),
             "plan": final.get("plan", {}), "failures": final.get("failures", []),
             "degraded": bool(final.get("degraded")),
+            # S4.4 观测：本轮是否触发过"规则补执行"（>0 说明模型那一步没自己调工具）
+            "forced_steps": final.get("forced_steps", 0) or 0,
             "resolved_question": final.get("resolved_question", question),
             "referent": final.get("referent", ""), "repeat": bool(final.get("repeat")),
             "profile": final.get("profile", ""),
