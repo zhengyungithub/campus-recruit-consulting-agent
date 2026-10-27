@@ -26,7 +26,8 @@ def check(cond, label, extra=""):
     return cond
 
 
-def call(method, path, token=None, body=None):
+def call(method, path, token=None, body=None, safe=False):
+    """safe=True 时不抛异常，把 4xx 回传成 dict——用于断言"这个操作应该被拒绝"。"""
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method)
     req.add_header("Content-Type", "application/json")
@@ -38,6 +39,11 @@ def call(method, path, token=None, body=None):
         with opener.open(req, timeout=15) as r:
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
+        if safe:
+            try:
+                return {**json.loads(e.read().decode()), "ok": False, "code": e.code}
+            except Exception:
+                return {"ok": False, "code": e.code, "detail": str(e)}
         raise RuntimeError(f"{method} {path} -> {e.code} {e.read().decode()[:200]}")
 
 
@@ -60,9 +66,17 @@ def main():
 
         print("\n[2] HR 改状态（验收动作）")
         new_status = "已约复试" if old_status != "已约复试" else "初面通过"
+        # S6.1：跨越多个环节属于"跳步"，接口要求填原因（否则 400）。
+        # 这里顺带验证带原因能通过——不带原因会被拒，见下面的 [2b]。
         r = call("PATCH", f"/api/admin/candidates/{cid}/status", token=atok,
-                 body={"status": new_status, "note": "端到端验收"})
+                 body={"status": new_status, "note": "端到端验收", "reason": "端到端验收"})
         check(r.get("ok"), "状态更新接口返回 ok")
+
+        print("\n[2b] S6.1 流转校验：非法回退应被拒")
+        bad = call("PATCH", f"/api/admin/candidates/{cid}/status", token=atok, safe=True,
+                   body={"status": "已初筛通过", "reason": "试试能不能倒回去"})
+        check(not bad.get("ok") and "不允许" in (bad.get("detail") or ""),
+              "白名单外的倒退被拒绝", str(bad)[:80])
 
         print("\n[3] 候选人登录并拉取通知")
         code = call("POST", "/api/login/request_code", body={"phone": phone})["demo_code"]

@@ -24,10 +24,12 @@ import sqlite3
 import threading
 from datetime import datetime
 
+from . import pii
 from .config import DB_PATH
 
 KIND_STATUS = "status_change"
 KIND_STALE = "stale_todo"
+KIND_TICKET = "ticket_reply"
 
 # 需要候选人动手的状态 -> 停滞提醒里点明"卡在哪一步"。
 # 其余状态（如"资料审核中""体检资料审核通过"）是公司侧动作，催候选人没有意义。
@@ -261,6 +263,37 @@ def _scan_stale(conn, cfg: dict) -> int:
              "status_stale", f"{status}@{since.isoformat()}#{bucket}", _now()))
         made += cur.rowcount
     return made
+
+
+def notify_ticket_reply(candidate_id: int, ticket_id: int, answer: str) -> int:
+    """工单被 HR 回复 → 推一条站内提醒（S6.1）。
+
+    两条取舍：
+    - **只放摘要，不放全文**。HR 回复里可能带手机号、姓名等（"已帮你联系张经理 138..."），
+      通知栏是候选人一眼扫过的地方，不适合承载完整内容；而且通知表与对话表不同，
+      没有经过红线扫描。摘要取前 40 字并做一次 PII 掩码，全文仍走【我的反馈】。
+    - **幂等按工单号**，不是按回复次数。HR 补充回复同一张单不重复打扰——
+      候选人看到一次就够了，点进去能看到最新内容。
+    """
+    summary = " ".join((answer or "").split())[:40]
+    # mask_pii 的契约是返回 (脱敏文本, 命中类型列表)，只要前半段——
+    # 直接把元组拼进文案会输出成 "('已帮你改到…', [])"，第一版就是这么踩的。
+    summary = pii.mask_pii(summary)[0]
+    body = (f"HR 已回复你的工单 #{ticket_id}"
+            + (f"：{summary}…" if summary else "。")
+            + "完整回复可在【我的反馈】查看。")
+    conn = conn_db()
+    ensure_tables(conn)
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO notices(candidate_id,kind,title,body,ref_type,ref_id,created_at)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (candidate_id, KIND_TICKET, f"人工回复 · 工单#{ticket_id}", body,
+             "ticket", str(ticket_id), _now()))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------- 读取与已读

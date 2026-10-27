@@ -107,7 +107,9 @@ def _retrieval_classify(text: str) -> Optional[dict]:
         from .store import get_conn
         from .retrieval import text_similarity
         with get_conn() as conn:
-            faqs = conn.execute("SELECT question FROM faqs WHERE active=1").fetchall()
+            from . import kb
+            faqs = conn.execute(
+                f"SELECT question FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
         best = max((text_similarity(text, f["question"]) for f in faqs), default=0.0)
         if best >= 0.5:
             return {"intent": "kb_qa", "confidence": round(min(0.9, best), 2),

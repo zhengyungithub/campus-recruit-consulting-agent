@@ -4,7 +4,7 @@ import json
 import re
 import threading
 
-from . import config
+from . import config, kb
 from .store import get_conn
 
 _lock = threading.Lock()
@@ -68,9 +68,11 @@ def text_similarity(a: str, b: str) -> float:
 
 
 def _active_faqs():
+    """对检索可见的知识库条目。S6.1：草稿（未审核）不进检索——
+    一条未经确认的知识会放大到所有问到它的候选人，宁可先不答。"""
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, question, answer, category FROM faqs WHERE active=1").fetchall()
+            f"SELECT id, question, answer, category FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
 
 
 def _keyword_search(query: str, k: int = 4):
@@ -227,7 +229,8 @@ def sync_faqs():
         return 0
     from qdrant_client.models import PointStruct
     with get_conn() as conn:
-        faqs = conn.execute("SELECT id, question, answer, category FROM faqs WHERE active=1").fetchall()
+        faqs = conn.execute(
+            f"SELECT id, question, answer, category FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
     valid_ids = {f["id"] for f in faqs}
     try:
         known, _ = c.scroll("kb_entries", limit=100000, with_payload=False)

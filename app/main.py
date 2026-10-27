@@ -20,7 +20,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from agent import dedupe as dedupe_mod
-from agent import notices, pii, prompts, ratelimit, retrieval, runtime
+from agent import flow, kb, notices, pii, prompts, ratelimit, retrieval, runtime
+from agent import tickets as ticket_rules
 from agent import config as agent_config
 from agent.pipeline import fixed_chat_reply
 from agent.routes import router as agent_router
@@ -173,6 +174,15 @@ def init_db():
         conn.execute("UPDATE faqs SET source='manual' WHERE source IS NULL OR source=''")
     # S5.3 主动推送：独立建表，不复用 messages（避免污染对话历史与评测的历史播种）
     notices.ensure_tables(conn)
+    conn.commit()
+    # S6.1 流转校验与操作审计（audit_log 表 + status_history 加 operator/reason 列）
+    flow.ensure_tables()
+    conn.commit()
+    # S6.1 知识库审核（faqs 加 review_status/reviewer/reviewed_at）
+    kb.ensure_columns()
+    conn.commit()
+    # S6.1 工单 SLA（tickets 加 assignee / priority / handled_at）
+    ticket_rules.ensure_columns()
     # 注意：seed() 现在总是调用——它在知识库非空时会早退，但**必须跑一趟**
     # 才能把 SEED_FAQS 填好，供下面的来源校正使用（存量库的种子条目来源标错过）。
     seed(conn)
@@ -323,6 +333,16 @@ SMS_CODES = {}         # phone -> code（演示环境；生产替换为短信网
 
 def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _faq_review_status(source: str) -> str:
+    """S6.1：机器批量来源入草稿待审，人工来源直接发布。
+
+    判据是**来源**而不是"谁在操作"：文档导入一次切出几十条、工单回流把对一个人的
+    答复泛化成通用政策，这两类都不是逐条经人确认的产物；手工录入是。
+    """
+    src = (source or "").strip()
+    return kb.DRAFT if src.startswith("doc_import") or src.startswith("ticket#") else kb.PUBLISHED
 
 
 def auth(request: Request, typ: str):
@@ -950,8 +970,9 @@ def import_candidates(body: dict, request: Request):
             " VALUES(?,?,?,?,?,?,?,?)",
             (name, phone, it.get("school", ""), it.get("major", ""), it.get("position", ""),
              it.get("site", ""), "已初筛通过", now()))
-        conn.execute("INSERT INTO status_history(candidate_id,status,note,created_at)"
-                     " VALUES(?,?,?,?)", (cur.lastrowid, "已初筛通过", "名单导入", now()))
+        conn.execute("INSERT INTO status_history(candidate_id,status,note,operator,created_at)"
+                     " VALUES(?,?,?,?,?)",
+                     (cur.lastrowid, "已初筛通过", "名单导入", "system:import", now()))
         added += 1
     conn.commit()
     conn.close()
@@ -963,23 +984,43 @@ def import_candidates(body: dict, request: Request):
 
 @app.patch("/api/admin/candidates/{cid}/status")
 def update_status(cid: int, body: dict, request: Request):
-    auth(request, "admin")
+    sess = auth_admin(request)                       # 要拿操作人，不能只鉴权
+    actor = sess.get("username") or ADMIN_USER
     status = body.get("status")
     if status not in STATUSES:
         raise HTTPException(400, "非法状态")
     conn = db()
-    if not conn.execute("SELECT 1 FROM candidates WHERE id=?", (cid,)).fetchone():
+    row = conn.execute("SELECT status FROM candidates WHERE id=?", (cid,)).fetchone()
+    if not row:
         conn.close()
         raise HTTPException(404, "候选人不存在")
+    cur, reason = row["status"], (body.get("reason") or "").strip()
+
+    # S6.1：状态是这个系统里最贵的数据——它同时决定推送文案、Agent 口吻与看板统计。
+    # 只校验"是不是合法值"挡不住「已归档 → 测评中」，所以这里再做一次语义校验。
+    verdict = flow.can_transit(cur, status, reason)
+    if not verdict["allowed"]:
+        conn.close()
+        flow.log(actor, "status_change", f"candidate#{cid}",
+                 f"拒绝：{verdict['message']}（{cur} → {status}）", result="denied")
+        raise HTTPException(400, verdict["message"])
+    if verdict["code"] == "same":
+        conn.close()
+        return {"ok": True, "unchanged": True, "message": "状态未变化，未产生新提醒"}
+
     conn.execute("UPDATE candidates SET status=? WHERE id=?", (status, cid))
-    conn.execute("INSERT INTO status_history(candidate_id,status,note,created_at)"
-                 " VALUES(?,?,?,?)", (cid, status, body.get("note") or "HR 手动更新", now()))
+    conn.execute("INSERT INTO status_history(candidate_id,status,note,operator,reason,created_at)"
+                 " VALUES(?,?,?,?,?,?)",
+                 (cid, status, body.get("note") or "HR 手动更新", actor, reason, now()))
     conn.commit()
     conn.close()
+    flow.log(actor, "status_change", f"candidate#{cid}",
+             f"{flow.describe(cur, status)}｜{verdict['message'] or reason or '常规推进'}"
+             f"{'（跳步）' if verdict['code'] == 'jump' else ''}")
     # S5.3：状态一改就同步扫一次，候选人立刻能收到提醒；
     # 后台线程只是兜底（覆盖批量导入等不走本接口的路径），不负责"即时性"。
     notices.scan()
-    return {"ok": True}
+    return {"ok": True, "code": verdict["code"], "message": verdict["message"]}
 
 
 # ---------------------------------------------------------------- S5.3 主动推送（管理端）
@@ -999,6 +1040,25 @@ def admin_scan_notices(request: Request):
     """手动触发一次扫描（后台线程每轮间隔较长，排查与验收时用这个立刻跑）"""
     auth(request, "admin")
     return {"ok": True, "result": notices.scan()}
+
+
+# ---------------------------------------------------------------- S6.1 操作审计
+@app.get("/api/admin/audit")
+def admin_audit(request: Request, limit: int = 50, actor: str = "", action: str = ""):
+    """操作日志：谁在什么时候改了谁的状态、拒绝了什么。
+    被拒绝的尝试也会记（result=denied）——"有人想改但没改成"本身就是要看的信号。"""
+    auth(request, "admin")
+    return {"logs": flow.recent(limit=limit, actor=actor or "", action=action or "")}
+
+
+@app.get("/api/admin/flow")
+def admin_flow(request: Request):
+    """把流转规则回传前端：下拉里提前置灰不可达的目标状态，别等后端报 400。"""
+    auth(request, "admin")
+    return {"order": flow.ORDER, "terminal": sorted(flow.TERMINAL),
+            "back": [{"from": a, "to": b, "why": c}
+                     for (a, b), c in flow.BACK_WHITELIST.items()],
+            "jump_threshold": flow.JUMP_THRESHOLD}
 
 
 @app.post("/api/admin/notices/config")
@@ -1028,23 +1088,50 @@ def admin_save_notice_config(request: Request, body: dict):
 
 
 @app.get("/api/admin/faqs")
-def list_faqs(request: Request, source: str = ""):
-    """source 为空返回全部；给值则按沉淀来源筛选（manual / ticket#id / doc_import / kb_seed）"""
+def list_faqs(request: Request, source: str = "", review: str = ""):
+    """source 为空返回全部；给值则按沉淀来源筛选（manual / ticket#id / doc_import / kb_seed）。
+    review=draft / published / rejected 按审核状态筛（S6.1 知识库审核）。"""
     auth(request, "admin")
-    src = (source or "").strip()
+    src, rv = (source or "").strip(), (review or "").strip()
     conn = db()
+    where, args = [], []
     if src:
-        rows = conn.execute(
-            "SELECT * FROM faqs WHERE source=? ORDER BY id DESC", (src,)).fetchall()
-        stats = conn.execute(
-            "SELECT source, COUNT(*) c FROM faqs GROUP BY source ORDER BY c DESC").fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM faqs ORDER BY id DESC").fetchall()
-        stats = conn.execute(
-            "SELECT source, COUNT(*) c FROM faqs GROUP BY source ORDER BY c DESC").fetchall()
+        where.append("source=?")
+        args.append(src)
+    if rv in ("draft", "published", "rejected"):
+        where.append("COALESCE(review_status,'published')=?")
+        args.append(rv)
+    sql = "SELECT * FROM faqs" + (" WHERE " + " AND ".join(where) if where else "") \
+          + " ORDER BY id DESC"
+    rows = conn.execute(sql, args).fetchall()
+    stats = conn.execute(
+        "SELECT source, COUNT(*) c FROM faqs GROUP BY source ORDER BY c DESC").fetchall()
     conn.close()
     return {"faqs": [dict(r) for r in rows],
-            "sources": [{"source": r["source"] or "manual", "count": r["c"]} for r in stats]}
+            "sources": [{"source": r["source"] or "manual", "count": r["c"]} for r in stats],
+            "review": kb.count_by_review()}
+
+
+@app.post("/api/admin/faqs/{fid}/review")
+def review_faq(fid: int, body: dict, request: Request):
+    """S6.1 知识库审核：publish 通过 / reject 拒绝 / draft 退回草稿。
+
+    审核是与"写知识库"同等重要的动作，所以同样记审计——
+    谁放行了哪条知识，事后要能查到。"""
+    sess = auth_admin(request)
+    actor = sess.get("username") or ADMIN_USER
+    r = kb.review(fid, (body.get("action") or "").strip(), actor)
+    if not r["ok"]:
+        raise HTTPException(400, r["error"])
+    flow.log(actor, f"faq_{body.get('action')}", f"faq#{fid}",
+             (r.get("question") or "")[:80])
+    # 通过的条目要立刻进向量库，否则"审核通过"到"能检索到"之间有一段空窗
+    if r["review_status"] == kb.PUBLISHED:
+        try:
+            retrieval.sync_faqs()
+        except Exception as e:
+            print(f"[kb] 审核通过后同步向量库失败（不影响状态）: {e!r}")
+    return r
 
 
 @app.post("/api/admin/faqs")
@@ -1061,9 +1148,12 @@ def create_faq(body: dict, request: Request):
         return {"ok": False, "skipped": True, "dedupe": dup}
 
     conn = db()
+    # S6.1：手工逐条录入的默认是已发布——HR 自己写的、页面上能立刻看到也能立刻删，
+    # 再拦一道审核只会拖慢日常维护。需要审的是机器批量来源（见 doc_import 与工单回流）。
     conn.execute(
-        "INSERT INTO faqs(question,answer,category,source,created_at) VALUES(?,?,?,?,?)",
-        (q, a, body.get("category") or "通用", source, now()))
+        "INSERT INTO faqs(question,answer,category,source,review_status,created_at)"
+        " VALUES(?,?,?,?,?,?)",
+        (q, a, body.get("category") or "通用", source, kb.PUBLISHED, now()))
     conn.commit()
     conn.close()
     try:
@@ -1155,10 +1245,12 @@ def bulk_faqs(body: dict, request: Request):
         return {"ok": False, "added": 0, "skipped": skipped}
 
     conn = db()
+    rs = _faq_review_status(source)
     for q, a, cat in to_add:
         conn.execute(
-            "INSERT INTO faqs(question,answer,category,source,created_at) VALUES(?,?,?,?,?)",
-            (q, a, cat, source, now()))
+            "INSERT INTO faqs(question,answer,category,source,review_status,created_at)"
+            " VALUES(?,?,?,?,?,?)",
+            (q, a, cat, source, rs, now()))
     conn.commit()
     conn.close()
     try:
@@ -1295,24 +1387,69 @@ async def kb_import_doc(request: Request, file: UploadFile = File(...)):
 
 
 @app.get("/api/admin/tickets")
-def list_tickets(request: Request, status: str = ""):
+def list_tickets(request: Request, status: str = "", overdue: int = 0,
+                 assignee: str = ""):
+    """status 支持 pending / handling / resolved；overdue=1 只看逾期；assignee 按负责人筛。"""
     auth(request, "admin")
     conn = db()
     sql = ("SELECT t.*, c.name, c.phone, c.status AS candidate_status FROM tickets t"
            " JOIN candidates c ON c.id = t.candidate_id")
-    params = ()
-    if status in ("pending", "resolved"):
-        sql += " WHERE t.status=?"
-        params = (status,)
+    where, params = [], []
+    if status in ("pending", "handling", "resolved"):
+        where.append("t.status=?")
+        params.append(status)
+    if assignee:
+        where.append("t.assignee=?")
+        params.append(assignee)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY t.id DESC"
-    rows = conn.execute(sql, params).fetchall()
+    rows = [ticket_rules.annotate(dict(r))
+            for r in conn.execute(sql, params).fetchall()]
     conn.close()
-    return {"tickets": [dict(r) for r in rows]}
+    if overdue:
+        rows = [r for r in rows if r["overdue"]]
+    return {"tickets": rows, "stats": ticket_rules.stats()}
+
+
+# ---------------------------------------------------------------- S6.1 工单 SLA
+@app.post("/api/admin/tickets/{tid}/claim")
+def claim_ticket(tid: int, body: dict, request: Request):
+    """认领：置处理中 + 记负责人。认领即负责，没有匿名处理。"""
+    sess = auth_admin(request)
+    actor = sess.get("username") or ADMIN_USER
+    r = ticket_rules.claim(tid, actor, (body.get("priority") or "").strip())
+    if not r["ok"]:
+        raise HTTPException(400, r["error"])
+    flow.log(actor, "ticket_claim", f"ticket#{tid}",
+             f"认领并置处理中（优先级 {r.get('priority', '不变')}）")
+    return r
+
+
+@app.post("/api/admin/tickets/{tid}/release")
+def release_ticket(tid: int, request: Request):
+    """退回待处理：认领错了或需要换人。"""
+    sess = auth_admin(request)
+    actor = sess.get("username") or ADMIN_USER
+    r = ticket_rules.release(tid)
+    flow.log(actor, "ticket_release", f"ticket#{tid}", "退回待处理")
+    return r
+
+
+@app.post("/api/admin/tickets/{tid}/priority")
+def set_ticket_priority(tid: int, body: dict, request: Request):
+    """设优先级：加急单 SLA 更短（8 小时 vs 普通 24 小时）。"""
+    auth(request, "admin")
+    r = ticket_rules.set_priority(tid, (body.get("priority") or "").strip())
+    if not r["ok"]:
+        raise HTTPException(400, r["error"])
+    return r
 
 
 @app.post("/api/admin/tickets/{tid}/reply")
 def reply_ticket(tid: int, body: dict, request: Request):
-    auth(request, "admin")
+    sess = auth_admin(request)
+    actor = sess.get("username") or ADMIN_USER
     answer = (body.get("answer") or "").strip()
     if not answer:
         raise HTTPException(400, "回复内容不能为空")
@@ -1326,6 +1463,7 @@ def reply_ticket(tid: int, body: dict, request: Request):
     conn.execute("INSERT INTO messages(candidate_id,role,content,created_at) VALUES(?,?,?,?)",
                  (t["candidate_id"], "bot",
                   f"【人工回复 · 工单#{tid}】{answer}", now()))
+    conn.commit()
     # S2.1/S2.2：沉淀前查重。判为重复则跳过并回传已有条目，
     # 来源记为 ticket#id，便于按批次整体回滚。
     faq_result = None
@@ -1339,11 +1477,18 @@ def reply_ticket(tid: int, body: dict, request: Request):
             faq_result = {"ok": False, "skipped": True, "dedupe": dup, "source": src}
         else:
             conn.execute(
-                "INSERT INTO faqs(question,answer,category,source,created_at) VALUES(?,?,?,?,?)",
-                (q_norm, answer, "回流", src, now()))
-            faq_result = {"ok": True, "skipped": False, "dedupe": dup, "source": src}
+                "INSERT INTO faqs(question,answer,category,source,review_status,created_at)"
+                " VALUES(?,?,?,?,?,?)",
+                (q_norm, answer, "回流", src, _faq_review_status(src), now()))
+            faq_result = {"ok": True, "skipped": False, "dedupe": dup, "source": src,
+                          "review_status": _faq_review_status(src)}
     conn.commit()
     conn.close()
+    # S6.1：闭环最后一公里。以前 HR 回复完，候选人只有主动打开【我的反馈】才知道，
+    # 工单常常"已解决但没人看"。这里复用 S5.3 的推送通道（同一张 notices 表、同一个铃铛）。
+    notices.notify_ticket_reply(t["candidate_id"], tid, answer)
+    flow.log(actor, "ticket_reply", f"ticket#{tid}",
+             f"回复候选人 #{t['candidate_id']}：{answer[:60]}")
     return {"ok": True, "faq": faq_result}
 
 
@@ -1355,15 +1500,22 @@ def admin_stats(request: Request):
     by_status = {s: 0 for s in STATUSES}
     for r in conn.execute("SELECT status, COUNT(*) c FROM candidates GROUP BY status"):
         by_status[r["status"]] = r["c"]
-    pending = conn.execute("SELECT COUNT(*) c FROM tickets WHERE status='pending'").fetchone()["c"]
-    resolved = conn.execute("SELECT COUNT(*) c FROM tickets WHERE status='resolved'").fetchone()["c"]
-    faq_count = conn.execute("SELECT COUNT(*) c FROM faqs WHERE active=1").fetchone()["c"]
+    # S6.1：待处理口径收紧——"没人认领"才算 pending，处理中的单不该再被当作待办催
+    pending = conn.execute(
+        f"SELECT COUNT(*) c FROM tickets WHERE status='{ticket_rules.PENDING}'").fetchone()["c"]
+    resolved = conn.execute(
+        f"SELECT COUNT(*) c FROM tickets WHERE status='{ticket_rules.RESOLVED}'").fetchone()["c"]
+    # S6.1：看板上的"知识条数"只数已发布的，草稿不算——
+    # 否则会给人一种"知识库很全"的错觉，而草稿其实答不上来。
+    faq_count = conn.execute(
+        f"SELECT COUNT(*) c FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchone()["c"]
     reflow = conn.execute("SELECT COUNT(*) c FROM tickets WHERE faq_added=1").fetchone()["c"]
     top = [dict(r) for r in conn.execute(
         "SELECT question, COUNT(*) c FROM tickets GROUP BY question ORDER BY c DESC LIMIT 5")]
     conn.close()
     return {"total": total, "by_status": by_status, "pending": pending,
-            "resolved": resolved, "faq_count": faq_count, "reflow": reflow, "top_questions": top}
+            "resolved": resolved, "faq_count": faq_count, "reflow": reflow,
+            "top_questions": top, "tickets": ticket_rules.stats()}
 
 
 # ---------------------------------------------------------------- 静态页

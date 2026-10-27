@@ -46,7 +46,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Download } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import { api, STATUSES } from '../api'
@@ -146,16 +146,48 @@ async function onFile(file) {
   } catch (e) { ElMessage.error('文件解析失败：' + e.message) }
 }
 
+// S6.1：状态变更要过流转校验。跨环节跳步与回退都必须填原因，
+// 否则后端直接 400——前端要提前把原因问出来，不能让 HR 撞上报错。
+const flowRule = ref({ order: [], jump_threshold: 2 })
+
+function needReason(cur, nxt) {
+  const a = flowRule.value.order.indexOf(cur)
+  const b = flowRule.value.order.indexOf(nxt)
+  if (a < 0 || b < 0) return true      // 未知状态：一律留痕
+  if (a === b) return false
+  if (b < a) return true               // 回退一定有原因（资料打回、重新约面…）
+  return (b - a) >= (flowRule.value.jump_threshold || 2)
+}
+
 async function upd(row, status) {
+  if (row.status === status) return
+  let reason = ''
+  if (needReason(row.status, status)) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        `从「${row.status}」变更为「${status}」属于${status && flowRule.value.order.indexOf(status) < flowRule.value.order.indexOf(row.status) ? '回退' : '跨环节跳步'}，请填写原因（会记入操作日志）。`,
+        '需要变更原因',
+        { inputPattern: /\S+/, inputErrorMessage: '原因不能为空', inputPlaceholder: '如：破格免测评 / 资料不合格需重传' })
+      reason = (value || '').trim()
+    } catch {
+      load()                            // 取消填写：把下拉回滚到服务端真实值
+      return
+    }
+  }
   try {
-    await api.updateStatus(row.id, status)
+    await api.updateStatus(row.id, status, '', reason)
     ElMessage.success(`已更新「${row.name}」当前环节：${status}`)
+    load()
   } catch (e) {
     ElMessage.error(e.message)
     load()  // 失败回滚：从服务端重载真实状态
   }
 }
-onMounted(load)
+
+async function loadFlow() {
+  try { flowRule.value = await api.flow() } catch { /* 规则拉不到就退化成"总填原因" */ }
+}
+onMounted(() => { load(); loadFlow() })
 </script>
 
 <style scoped>

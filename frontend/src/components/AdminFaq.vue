@@ -25,6 +25,12 @@
       <div class="hd">
         <h4>知识库（{{ rows.length }}）</h4>
         <div class="hd-right">
+          <!-- S6.1：草稿来源（文档导入 / 工单回流）需审核后才对机器人可见 -->
+          <el-radio-group v-model="reviewFilter" size="small" @change="load">
+            <el-radio-button label="全部" value="" />
+            <el-radio-button :label="`待审核（${reviewStats.draft || 0}）`" value="draft" />
+            <el-radio-button label="已发布" value="published" />
+          </el-radio-group>
           <el-select v-model="srcFilter" size="small" style="width:190px" @change="load">
             <el-option label="全部来源" value="" />
             <el-option v-for="s in sources" :key="s.source"
@@ -49,8 +55,18 @@
               {{ srcLabel(row.source) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="状态" width="90">
           <template #default="{ row }">
+            <el-tag size="small" :type="row.review_status === 'draft' ? 'warning' : 'success'">
+              {{ row.review_status === 'draft' ? '待审核' : '已发布' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220">
+          <template #default="{ row }">
+            <template v-if="row.review_status === 'draft'">
+              <el-button size="small" type="success" plain @click="reviewFaqRow(row, 'publish')">通过</el-button>
+              <el-button size="small" type="danger" plain @click="reviewFaqRow(row, 'reject')">拒绝</el-button>
+            </template>
             <el-button size="small" plain @click="edit(row)">编辑</el-button>
             <el-button size="small" type="danger" plain @click="del(row)">删除</el-button>
           </template>
@@ -137,13 +153,23 @@ const parsing = ref(false), impDlg = ref(false), saving = ref(false)
 const proposals = ref([]), sel = ref([]), impMeta = ref({})
 // S2.2 来源筛选与回滚
 const sources = ref([]), srcFilter = ref(''), forceAdd = ref(false)
+// S6.1 知识库审核：草稿对外不可见，通过后才会被检索到
+const reviewFilter = ref(''), reviewStats = ref({})
+
+async function reviewFaqRow(row, action) {
+  try {
+    await api.reviewFaq(row.id, action)
+    ElMessage.success(action === 'publish' ? '已通过，该条目对机器人可见' : '已拒绝')
+    load()
+  } catch (e) { ElMessage.error(e.message) }
+}
 const dupHits = computed(() => proposals.value
   .filter(p => p._dup && p._dup.level !== 'ok')
   .map(p => ({ question: p.question, msg: p._dup.message || '已有相似条目' })))
 
 async function load() {
-  const j = await api.faqs(srcFilter.value)
-  rows.value = j.faqs; sources.value = j.sources || []
+  const j = await api.faqs(reviewFilter.value, srcFilter.value)
+  rows.value = j.faqs; sources.value = j.sources || []; reviewStats.value = j.review || {}
 }
 async function add() {
   // S2.1：命中重复/相近条目时不直接入库，先让 HR 确认（force=1 再提一次即强制入库）

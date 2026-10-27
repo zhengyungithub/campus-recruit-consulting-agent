@@ -5,7 +5,7 @@ from datetime import datetime
 
 from .store import get_conn
 from .retrieval import text_similarity
-from . import intent as intent_mod
+from . import intent as intent_mod, kb
 
 GREET_RE = re.compile(r"^(你好|您好|hi|hello|嗨|哈喽|在吗)[!！。~\s]*$", re.I)
 THANKS_RE = re.compile(r"^(谢谢|多谢|感谢|thanks|thank you)[!！。~\s]*$", re.I)
@@ -82,7 +82,7 @@ def fixed_chat_reply(cid: int, msg: str, allow_ticket: bool = True):
 
 def _faq_search(msg: str):
     with get_conn() as conn:
-        faqs = conn.execute("SELECT * FROM faqs WHERE active=1").fetchall()
+        faqs = conn.execute(f"SELECT * FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
     scored = sorted(((text_similarity(msg, f["question"]), f) for f in faqs),
                     key=lambda x: -x[0])
     return [{"question": f["question"], "answer": f["answer"], "score": round(s, 4)}
