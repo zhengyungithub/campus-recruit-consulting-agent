@@ -29,6 +29,9 @@ from agent.routes import router as agent_router
 BASE = Path(__file__).parent
 DB_PATH = BASE / "campus_bot.db"
 STATIC = BASE / "static"
+# 空目录不会被 git 跟踪，全新克隆/部署时这里不存在，
+# 而 StaticFiles 在目录缺失时会直接抛错导致整个服务起不来 —— 启动期兜底建出来
+STATIC.mkdir(parents=True, exist_ok=True)
 
 # HR 后台管理员账号（生产环境用环境变量覆盖）
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")

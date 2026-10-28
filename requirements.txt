@@ -7,6 +7,7 @@ uvicorn[standard]==0.50.2
 SQLAlchemy==2.0.42
 python-dotenv==1.2.2
 pydantic==2.13.4
+python-multipart==0.0.20   # 文件上传接口依赖，缺了启动即报 RuntimeError
 
 # Agent 图 / LLM 编排（与 LangGraph 1.x API 对齐）
 langgraph==1.2.12
