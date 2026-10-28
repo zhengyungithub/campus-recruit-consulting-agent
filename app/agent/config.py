@@ -5,6 +5,7 @@
 后台保存配置后无需重启服务即可生效（模型实例缓存由 llm_service.reset_models() 清除）。
 """
 import os
+import secrets
 import sqlite3
 from pathlib import Path
 
@@ -28,6 +29,35 @@ _load_dotenv()
 # ---- 静态配置 ----
 AGENT_SHADOW_RATE = float(os.getenv("AGENT_SHADOW_RATE", "0.5"))
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
+
+def resolve_admin_password(generate: bool = True) -> str:
+    """解析管理员初始口令，优先级：环境变量 ADMIN_PASSWORD > app/.env > 随机生成并落盘。
+
+    **明文口令绝不能作为默认值写进代码**——仓库是公开的，提交后就永久留在历史里。
+    没配置时也不禁用登录，而是生成随机口令写入 app/.env（已被 gitignore），
+    保证重启后口令不变（否则管理员会被自己锁在门外），并在启动日志里打印一次。
+
+    generate=False 供只读场景（如测试脚本）使用：取不到就返回空串，不写文件。
+    """
+    env_val = os.getenv("ADMIN_PASSWORD")
+    if env_val:
+        return env_val
+    dotenv = APP_DIR / ".env"
+    prefix = "ADMIN_PASSWORD="
+    if dotenv.exists():
+        for line in dotenv.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if line.startswith(prefix):
+                return line[len(prefix):].strip().strip('"').strip("'")
+    if not generate:
+        return ""
+    pwd = secrets.token_urlsafe(16)
+    with dotenv.open("a", encoding="utf-8") as fp:
+        fp.write("\n# 首次启动自动生成的管理员初始口令，登录后请立即修改\n%s%s\n" % (prefix, pwd))
+    print("[安全] 未检测到 ADMIN_PASSWORD，已生成随机初始口令写入 %s" % dotenv, flush=True)
+    print("[安全] 初始口令 = %s —— 请登录后立即修改，勿外泄" % pwd, flush=True)
+    return pwd
+
 
 # ---- 存储 ----
 QDRANT_PATH = APP_DIR / "qdrant_data"

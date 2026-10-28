@@ -11,11 +11,12 @@
 跑完清理所有测试数据（工单 / 通知 / 知识条目 / 状态历史），并把候选人状态还原。
 """
 import json
+import os
 import sqlite3
 import urllib.error
 import urllib.request
 
-from agent.config import DB_PATH
+from agent.config import DB_PATH, resolve_admin_password
 
 BASE = "http://127.0.0.1:8000"
 FAILED = []
@@ -58,7 +59,9 @@ def q(sql, args=()):
 def main():
     con = sqlite3.connect(str(DB_PATH))
     con.row_factory = sqlite3.Row
-    adm = call("POST", "/api/admin/login", safe=True, body={"username": "admin", "password": "<REDACTED>"})
+    adm = call("POST", "/api/admin/login", safe=True, body={
+        "username": os.getenv("ADMIN_USER", "admin"),
+        "password": resolve_admin_password(generate=False)})
     atok = adm["token"]
 
     # 先清可能的残留：上次异常退出时清理段没走到 commit，会留下测试数据

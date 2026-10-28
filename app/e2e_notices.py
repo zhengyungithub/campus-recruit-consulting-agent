@@ -8,12 +8,13 @@
 跑完把状态、历史、通知全部还原，不留测试数据。
 """
 import json
+import os
 import sqlite3
 import sys
 import urllib.error
 import urllib.request
 
-from agent.config import DB_PATH
+from agent.config import DB_PATH, resolve_admin_password
 
 BASE = "http://127.0.0.1:8000"
 FAILED = []
@@ -60,7 +61,9 @@ def main():
 
     try:
         print("\n[1] 管理员登录")
-        adm = call("POST", "/api/admin/login", body={"username": "admin", "password": "<REDACTED>"})
+        adm = call("POST", "/api/admin/login", body={
+            "username": os.getenv("ADMIN_USER", "admin"),
+            "password": resolve_admin_password(generate=False)})
         atok = adm["token"]
         check(adm.get("role") in ("super", "hr"), "登录成功", adm.get("role"))
 

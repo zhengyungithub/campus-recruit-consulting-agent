@@ -16,7 +16,8 @@
                                 :prefix-icon="Lock" @keydown.enter="doLogin" /></el-form-item>
         <el-button type="primary" size="large" style="width:100%" @click="doLogin">登 录</el-button>
       </el-form>
-      <div class="tip" style="margin-top:14px">演示账号：admin / <REDACTED>（超级管理员）</div>
+      <!-- 不在页面上写任何凭据：口令由部署方配置（环境变量 / 首次启动随机生成见服务日志） -->
+      <div class="tip" style="margin-top:14px">忘记口令请联系系统管理员重置，勿使用弱口令</div>
     </el-card>
   </div>
 

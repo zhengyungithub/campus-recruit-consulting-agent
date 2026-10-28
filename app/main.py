@@ -33,9 +33,11 @@ STATIC = BASE / "static"
 # 而 StaticFiles 在目录缺失时会直接抛错导致整个服务起不来 —— 启动期兜底建出来
 STATIC.mkdir(parents=True, exist_ok=True)
 
-# HR 后台管理员账号（生产环境用环境变量覆盖）
+
+# HR 后台管理员账号（生产环境请用环境变量 ADMIN_USER / ADMIN_PASSWORD 覆盖）
+# 口令解析统一走 agent.config —— 明文口令不写死在代码里（仓库公开，提交即永久泄露）
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
-ADMIN_PWD = os.getenv("ADMIN_PASSWORD", "<REDACTED>")
+ADMIN_PWD = agent_config.resolve_admin_password()
 
 app = FastAPI(title="校招咨询 Agent MVP")
 app.include_router(agent_router)
