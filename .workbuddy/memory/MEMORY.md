@@ -34,6 +34,16 @@ git -c http.proxy=socks5h://127.0.0.1:18080 push origin master:main
   后果：远程 main 与本地是**同一份重写后的历史**（`ee3fef2` 起），服务器那份是 `git reset --hard origin/main` 对齐的。
   日常 `git pull` 正常；若再有人 `filter-repo`，本地/服务器都要重新对齐。
 
+## 三端登录与角色模型（用户已确认的设计约定）
+- 候选人/学生：`https://campus.zhengyun.online/`（redirect 到 `/c`），手机号+验证码；设过密码后可用手机号+密码。
+- 后台：管理员与 HR **共用 `/admin` 同一个登录框**，靠 `/api/admin/login` 返回的 `role` 分流菜单。
+- **super（超管）= 纯技术配置**（Agent 灰度/模型配置/HR 账号管理/评测回归/操作日志/主动推送）；
+  **hr = 业务运营**（数据看板/候选人/知识库/反馈工单/主动推送）。二者菜单是**刻意互斥**的，
+  **不要**因为"超管看不到候选人"就去补 super 的白名单——2026-10-28 用户明确回复这是设计意图。
+- HR 账号不能自助注册，只能由超管通过 `POST /api/admin/accounts` 创建（role 默认 hr）。
+- ⚠️ **任何账号口令都不要写进仓库文件**（含 `.workbuddy/memory/`）——仓库公开，口令只放在
+  `/opt/campus-agent/env` 或当面给用户。
+
 ## 相关但独立的另一个仓库
 - `zhengyungithub/onboarding-ai-assistant`：同一个项目的**另一条开发线**（无共同祖先），
   含"知途"品牌化登录页、两级角色+用户管理、系统级模型兜底、备忘录排序、nginx 部署等 12 个提交，
