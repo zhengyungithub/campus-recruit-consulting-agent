@@ -20,7 +20,11 @@ git -c http.proxy=socks5h://127.0.0.1:18080 push origin master:main
 - 代码 `/opt/campus-agent/src`，venv 同目录；前端 dist `/var/www/campus-agent`；
   后端 systemd `campus-agent` 监听 `127.0.0.1:8010`（**单 worker**，SSE 流式依赖它）。
 - 环境文件 `/opt/campus-agent/env`（600，systemd EnvironmentFile）；更新用 `sudo /opt/campus-agent/deploy.sh`。
-- 子域名 `campus.zhengyun.online`（DNS 在阿里云，需用户手动加 A 记录；HTTPS 用 certbot，webroot `/var/www/certbot`）。
+- **正式地址：`https://campus.zhengyun.online`**（2026-10-28 上线）。子域名就是 **`campus`**。
+- DNS A 记录由用户在**阿里云控制台**手动添加（本机无阿里云 AK，代操作不了）。
+- HTTPS 用 certbot webroot（校验目录 `/var/www/certbot`，与其他站点共用），自动续期已开启，证书每到 90 天续。
+- nginx 站点 `/etc/nginx/sites-available/campus-agent.conf`：80 只留 ACME 通道并 301 跳 HTTPS，443 反代 8010。
+  **nginx 是 1.24.0，必须写 `listen 443 ssl http2;`，不能用 `http2 on;`（要 1.25.1+）**。
 - 同机还跑着另一个同栈应用 `/opt/hr-ai`（占 8000）和主站（占 3000），**别抢端口**。
 - **改管理员密码**：生产 DB 的 `accounts` 表在首次启动时已固化当时的默认口令，改环境变量无效，
   必须走 `POST /api/admin/account`（旧口令校验）或后台页面。当前口令在 `/opt/campus-agent/env`，**从未进过仓库**。
