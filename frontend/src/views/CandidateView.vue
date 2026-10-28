@@ -46,35 +46,82 @@
       </div>
     </header>
 
-    <!-- 登录 -->
+    <!-- 登录：左品牌展示 + 右表单的分栏布局（借鉴 GitHub 上 art-design-pro / soybean-admin 等登录页风格，沿用项目青绿色调） -->
     <div v-if="!logged" class="login-wrap">
-      <el-card class="login-card" shadow="always">
-        <h3>候选人登录</h3>
-        <p class="tip">请使用校招报名时预留的手机号登录</p>
-        <div class="login-mode">
-          <el-radio-group v-model="loginMode" size="small">
-            <el-radio-button value="code">验证码登录</el-radio-button>
-            <el-radio-button value="pwd">密码登录</el-radio-button>
-          </el-radio-group>
-        </div>
-        <el-form @submit.prevent>
-          <el-form-item><el-input v-model="phone" maxlength="11" placeholder="手机号" size="large" /></el-form-item>
-          <el-form-item v-if="loginMode === 'code'">
-            <div class="code-row">
-              <el-input v-model="code" maxlength="6" placeholder="验证码" size="large" />
-              <el-button size="large" @click="requestCode">获取验证码</el-button>
+      <!-- 左侧品牌区：窄屏自动隐藏 -->
+      <aside class="brand-pane">
+        <div class="brand-deco d1"></div>
+        <div class="brand-deco d2"></div>
+        <div class="brand-deco d3"></div>
+        <div class="brand-inner">
+          <div class="brand-logo-row">
+            <span class="brand-logo">校</span>
+            <div class="brand-name">
+              <b>校招 AI 问答</b>
+              <span>智能校招咨询助手</span>
             </div>
-          </el-form-item>
-          <el-form-item v-else>
-            <el-input v-model="pwdLogin" type="password" show-password size="large"
-                      placeholder="登录密码" @keydown.enter="doLogin" />
-          </el-form-item>
-          <el-button type="primary" size="large" style="width:100%" @click="doLogin">登 录</el-button>
-        </el-form>
-        <el-alert v-if="loginMsg" :title="loginMsg" type="warning" :closable="false" style="margin-top:12px" />
-        <el-alert :title="loginMode === 'code' ? '演示环境：验证码直接回显' : '首次使用请先用验证码登录，再在【账号设置】中设置密码'"
-                  type="info" :closable="false" style="margin-top:8px" />
-      </el-card>
+          </div>
+          <h1 class="brand-slogan">让校招沟通<em>更简单</em></h1>
+          <p class="brand-sub">基于 AI Agent 的校招全流程咨询：知识库有据可查，进度实时同步，答不了的问题自动转人工。</p>
+          <ul class="brand-feats">
+            <li v-for="f in brandFeats" :key="f.t">
+              <span class="fi">{{ f.i }}</span>
+              <div><b>{{ f.t }}</b><p>{{ f.d }}</p></div>
+            </li>
+          </ul>
+          <div class="brand-demo">
+            <div class="bd-bubble user">体检是什么时候？</div>
+            <div class="bd-bubble bot">体检预计在 10 月 30 日上午进行，请携带身份证空腹到场。<span class="bd-verify">🛡 已逐句核验</span></div>
+          </div>
+        </div>
+      </aside>
+      <!-- 右侧表单区 -->
+      <main class="form-pane">
+        <div class="login-card">
+          <div class="lc-head">
+            <span class="lc-logo">校</span>
+            <div><b>校招 AI 问答</b><p>campus.zhengyun.online</p></div>
+          </div>
+          <h3>欢迎回来 👋</h3>
+          <p class="tip">请使用校招报名时预留的手机号登录</p>
+          <div class="login-mode">
+            <el-radio-group v-model="loginMode" size="small">
+              <el-radio-button value="code">验证码登录</el-radio-button>
+              <el-radio-button value="pwd">密码登录</el-radio-button>
+            </el-radio-group>
+          </div>
+          <el-form @submit.prevent>
+            <el-form-item>
+              <el-input v-model="phone" maxlength="11" placeholder="手机号" size="large" clearable>
+                <template #prefix><el-icon><Iphone /></el-icon></template>
+              </el-input>
+            </el-form-item>
+            <el-form-item v-if="loginMode === 'code'">
+              <div class="code-row">
+                <el-input v-model="code" maxlength="6" placeholder="验证码" size="large" @keydown.enter="doLogin">
+                  <template #prefix><el-icon><Key /></el-icon></template>
+                </el-input>
+                <el-button size="large" class="cd-btn" :disabled="cd > 0" @click="requestCode">
+                  {{ cd > 0 ? cd + 's 后重发' : '获取验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+            <el-form-item v-else>
+              <el-input v-model="pwdLogin" type="password" show-password size="large"
+                        placeholder="登录密码" @keydown.enter="doLogin">
+                <template #prefix><el-icon><Lock /></el-icon></template>
+              </el-input>
+            </el-form-item>
+            <el-button type="primary" size="large" class="login-btn" @click="doLogin">登 录</el-button>
+          </el-form>
+          <el-alert v-if="loginMsg" :title="loginMsg" type="warning" :closable="false" class="login-alert" />
+          <div class="login-hint">
+            <el-icon><InfoFilled /></el-icon>
+            <span>{{ loginMode === 'code' ? '演示环境：验证码直接回显，无需真实短信' : '首次使用请先用验证码登录，再在【账号设置】中设置密码' }}</span>
+          </div>
+        </div>
+        <footer class="login-footer">© 2026 校招 AI 问答 · 让每一位候选人不再迷茫</footer>
+      </main>
     </div>
 
     <!-- 对话页 -->
@@ -224,12 +271,22 @@
 <script setup>
 import { ref, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound, Promotion, InfoFilled, Bell } from '@element-plus/icons-vue'
+import { ChatDotRound, Promotion, InfoFilled, Bell, Iphone, Lock, Key } from '@element-plus/icons-vue'
 import { api, cand } from '../api'
 
 const logged = ref(cand.logged)
 const phone = ref(''), code = ref(''), loginMsg = ref('')
 const loginMode = ref('code'), pwdLogin = ref('')
+// 登录页左侧品牌区特性亮点（登录后才进入对话页，这里静态展示即可）
+const brandFeats = [
+  { i: '🤖', t: 'Agent 智能问答', d: '规划 · 检索 · 核验，复杂问题自动拆解' },
+  { i: '📊', t: '进度实时同步', d: '每个环节状态变化，第一时间知晓' },
+  { i: '🛡', t: '答案逐句核验', d: '每句话都有知识库依据，拒绝 AI 编造' },
+  { i: '💬', t: '无答自动转人工', d: '答不了的问题生成工单，HR 跟进回复' },
+]
+// 验证码 60s 倒计时：防止连点刷接口
+const cd = ref(0)
+let cdTimer = null
 const drawerAcct = ref(false), hasPwd = ref(false)
 const acctForm = ref({ old_password: '', new_password: '', confirm: '' })
 const messages = ref([])
@@ -300,10 +357,16 @@ function clearChat() { messages.value = []; procStages.value = []; procSteps.val
 function quick(q) { draft.value = q; send() }
 
 async function requestCode() {
+  if (cd.value > 0) return
+  const p = phone.value.trim()
+  if (!/^1\d{10}$/.test(p)) { loginMsg.value = ''; ElMessage.warning('请输入 11 位手机号'); return }
   try {
-    const j = await api.requestCode(phone.value.trim())
+    const j = await api.requestCode(p)
     code.value = j.demo_code
     loginMsg.value = `演示验证码：${j.demo_code}（生产环境将短信下发）`
+    cd.value = 60
+    clearInterval(cdTimer)
+    cdTimer = setInterval(() => { if (--cd.value <= 0) clearInterval(cdTimer) }, 1000)
   } catch (e) { loginMsg.value = e.message; ElMessage.error(e.message) }
 }
 async function doLogin() {
@@ -421,7 +484,7 @@ onMounted(() => {
     noticeTimer = setInterval(loadNotices, 60000)
   }
 })
-onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer) })
+onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer); if (cdTimer) clearInterval(cdTimer) })
 </script>
 
 <style scoped>
@@ -459,13 +522,80 @@ onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer) })
   display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .uname { font-size: 13px; color: #4a524b; }
 
-/* 登录 */
-.login-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #f5f3ef; }
-.login-card { width: 380px; border-radius: 16px; border: none; padding: 10px 6px; }
-.login-card h3 { margin: 0 0 4px; font-size: 18px; }
+/* ===== 登录：左品牌 + 右表单分栏 ===== */
+.login-wrap { flex: 1; display: flex; overflow: hidden; background: #f5f3ef; }
+
+/* 左侧品牌区 */
+.brand-pane { flex: 1.15; position: relative; overflow: hidden; display: flex; color: #fff;
+  background: linear-gradient(150deg, #a3bda4 0%, #8aab94 45%, #6f9380 100%); }
+.brand-deco { position: absolute; border-radius: 50%; pointer-events: none; }
+.brand-deco.d1 { width: 420px; height: 420px; right: -120px; top: -140px;
+  background: radial-gradient(circle, rgba(255,255,255,.18), rgba(255,255,255,0) 70%); }
+.brand-deco.d2 { width: 340px; height: 340px; left: -110px; bottom: -120px;
+  background: radial-gradient(circle, rgba(255,255,255,.14), rgba(255,255,255,0) 70%); }
+.brand-deco.d3 { width: 160px; height: 160px; right: 18%; bottom: 12%;
+  background: radial-gradient(circle, rgba(255,255,255,.10), rgba(255,255,255,0) 70%); }
+.brand-inner { position: relative; z-index: 2; margin: auto; width: min(460px, 82%); padding: 48px 0; }
+.brand-logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+.brand-logo { width: 46px; height: 46px; border-radius: 13px; background: rgba(255,255,255,.92);
+  color: #6f9380; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 22px; box-shadow: 0 6px 18px rgba(40,60,48,.18); }
+.brand-name b { display: block; font-size: 17px; letter-spacing: .5px; }
+.brand-name span { font-size: 12px; opacity: .82; }
+.brand-slogan { margin: 0 0 14px; font-size: 34px; line-height: 1.3; font-weight: 700; letter-spacing: 1px; }
+.brand-slogan em { font-style: normal;
+  background: linear-gradient(90deg, #fdf6e3, #ffe8c2); -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; }
+.brand-sub { margin: 0 0 30px; font-size: 14px; line-height: 1.9; opacity: .88; max-width: 400px; }
+.brand-feats { list-style: none; margin: 0 0 32px; padding: 0; display: grid;
+  grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+.brand-feats li { display: flex; gap: 10px; align-items: flex-start; }
+.brand-feats .fi { flex: none; width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.16);
+  display: flex; align-items: center; justify-content: center; font-size: 17px; backdrop-filter: blur(2px); }
+.brand-feats b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.brand-feats p { margin: 0; font-size: 11.5px; line-height: 1.55; opacity: .78; }
+/* 模拟对话气泡：暗示这是问答产品 */
+.brand-demo { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
+.bd-bubble { padding: 10px 14px; border-radius: 13px; font-size: 12.5px; line-height: 1.65;
+  box-shadow: 0 4px 14px rgba(40,60,48,.10); animation: floaty 5s ease-in-out infinite; }
+.bd-bubble.user { align-self: flex-end; background: rgba(255,255,255,.92); color: #4a554e;
+  border-bottom-right-radius: 4px; }
+.bd-bubble.bot { align-self: flex-start; background: rgba(255,255,255,.16); color: #fff;
+  border-bottom-left-radius: 4px; backdrop-filter: blur(4px); animation-delay: 1.2s; }
+.bd-verify { display: inline-block; margin-top: 5px; font-size: 10.5px; opacity: .85; }
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+/* 右侧表单区 */
+.form-pane { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 32px 24px; overflow-y: auto; position: relative; }
 .tip { color: #8a948c; font-size: 12px; }
-.login-mode { margin: 4px 0 14px; }
+.login-card { width: 100%; max-width: 400px; background: #fff; border-radius: 20px;
+  padding: 34px 34px 26px; border: 1px solid #eceae4;
+  box-shadow: 0 18px 50px rgba(90,110,95,.10); }
+.lc-head { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+.lc-logo { width: 34px; height: 34px; border-radius: 9px;
+  background: linear-gradient(135deg, #a8bfa4, #8fae96); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.lc-head b { font-size: 14.5px; color: #3d443e; display: block; }
+.lc-head p { margin: 0; font-size: 10.5px; color: #a9b2a8; }
+.login-card h3 { margin: 0 0 4px; font-size: 21px; color: #2f352f; }
+.login-card .tip { color: #8a948c; font-size: 12.5px; margin: 0 0 14px; }
+.login-mode { margin: 0 0 18px; }
+.login-mode :deep(.el-radio-button__inner) { border-radius: 8px; }
 .code-row { display: flex; gap: 8px; width: 100%; }
+.code-row .el-input { flex: 1; }
+.cd-btn { flex: none; min-width: 112px; }
+.login-card :deep(.el-input__wrapper) { border-radius: 10px; padding: 4px 12px; }
+.login-btn { width: 100%; margin-top: 4px; border: none; border-radius: 10px; font-weight: 600;
+  background: linear-gradient(135deg, #a3bfa0, #8fae96);
+  box-shadow: 0 6px 16px rgba(143, 174, 150, .38); transition: transform .15s, box-shadow .15s; }
+.login-btn:hover { transform: translateY(-1px); box-shadow: 0 9px 20px rgba(143, 174, 150, .46); }
+.login-btn:active { transform: translateY(0); }
+.login-alert { margin-top: 12px; border-radius: 8px; }
+.login-hint { display: flex; gap: 6px; align-items: flex-start; margin-top: 14px; padding: 9px 12px;
+  background: #f4f6f2; border-radius: 8px; font-size: 11.5px; color: #8a948c; line-height: 1.6; }
+.login-hint .el-icon { flex: none; margin-top: 2px; }
+.login-footer { margin-top: 22px; font-size: 11.5px; color: #a9b2a8; }
 
 /* 对话页 */
 .chat-page { flex: 1; display: flex; justify-content: center; background: #f5f3ef; overflow: hidden; }
@@ -521,9 +651,15 @@ onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer) })
 
 @keyframes blink { 50% { opacity: 0; } }
 
+@media (max-width: 960px) {
+  /* 窄屏隐藏品牌区，登录表单全屏居中 */
+  .brand-pane { display: none; }
+  .form-pane { background: linear-gradient(160deg, #eef1ec, #f5f3ef); }
+}
 @media (max-width: 640px) {
   .chat-panel { margin: 0; border-radius: 0; border: none; }
   .msgs { padding: 16px; }
   .tb-left .sub { display: none; }
+  .login-card { padding: 26px 22px 20px; }
 }
 </style>
