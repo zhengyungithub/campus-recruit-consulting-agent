@@ -15,6 +15,16 @@ git -c http.proxy=socks5h://127.0.0.1:18080 push origin master:main
 直连或走系统代理都会失败（`CONNECT tunnel failed, response 502` / 超时）；
 `git ls-remote` 经隧道偶发超时不影响 push。
 
+## 生产部署（2026-10-28）
+- 服务器：腾讯云 `ubuntu@43.142.33.191`（密钥 `~/.ssh/tencentcloud_ed25519`，必须显式 `-i`）。
+- 代码 `/opt/campus-agent/src`，venv 同目录；前端 dist `/var/www/campus-agent`；
+  后端 systemd `campus-agent` 监听 `127.0.0.1:8010`（**单 worker**，SSE 流式依赖它）。
+- 环境文件 `/opt/campus-agent/env`（600，systemd EnvironmentFile）；更新用 `sudo /opt/campus-agent/deploy.sh`。
+- 子域名 `campus.zhengyun.online`（DNS 在阿里云，需用户手动加 A 记录；HTTPS 用 certbot，webroot `/var/www/certbot`）。
+- 同机还跑着另一个同栈应用 `/opt/hr-ai`（占 8000）和主站（占 3000），**别抢端口**。
+- **改管理员密码**：生产 DB 的 `accounts` 表在首次启动时已固化默认密码，改环境变量无效，
+  必须走 `POST /api/admin/account`（旧密码校验）或后台页面。
+
 ## 相关但独立的另一个仓库
 - `zhengyungithub/onboarding-ai-assistant`：同一个项目的**另一条开发线**（无共同祖先），
   含"知途"品牌化登录页、两级角色+用户管理、系统级模型兜底、备忘录排序、nginx 部署等 12 个提交，
