@@ -1,0 +1,30 @@
+# 后端运行依赖（生产部署用）
+# 版本口径：桌面开发机已验证 + 服务器上同栈 LangGraph 应用已验证的交集
+# 新增依赖后请同步本文档「部署说明」章节
+
+fastapi==0.139.0
+uvicorn[standard]==0.50.2
+SQLAlchemy==2.0.42
+python-dotenv==1.2.2
+pydantic==2.13.4
+
+# Agent 图 / LLM 编排（与 LangGraph 1.x API 对齐）
+langgraph==1.2.12
+langgraph-checkpoint-sqlite==3.1.1
+langchain-core==1.7.0
+langchain-openai==1.6.7
+
+# 向量库（本地文件模式，不需要独立 Qdrant 服务）
+qdrant-client==1.19.1
+
+# 检索 / 文本处理
+jieba==0.42.1
+numpy==2.3.2
+
+# 文档解析（知识库导入）
+python-docx==1.2.0
+pypdf==6.14.2
+
+# HTTP
+httpx==0.28.1
+requests==2.34.2
