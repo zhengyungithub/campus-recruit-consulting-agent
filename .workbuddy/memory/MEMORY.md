@@ -22,8 +22,13 @@ git -c http.proxy=socks5h://127.0.0.1:18080 push origin master:main
 - 环境文件 `/opt/campus-agent/env`（600，systemd EnvironmentFile）；更新用 `sudo /opt/campus-agent/deploy.sh`。
 - 子域名 `campus.zhengyun.online`（DNS 在阿里云，需用户手动加 A 记录；HTTPS 用 certbot，webroot `/var/www/certbot`）。
 - 同机还跑着另一个同栈应用 `/opt/hr-ai`（占 8000）和主站（占 3000），**别抢端口**。
-- **改管理员密码**：生产 DB 的 `accounts` 表在首次启动时已固化默认密码，改环境变量无效，
-  必须走 `POST /api/admin/account`（旧密码校验）或后台页面。
+- **改管理员密码**：生产 DB 的 `accounts` 表在首次启动时已固化当时的默认口令，改环境变量无效，
+  必须走 `POST /api/admin/account`（旧口令校验）或后台页面。当前口令在 `/opt/campus-agent/env`，**从未进过仓库**。
+- **口令解析唯一入口**：`agent/config.py::resolve_admin_password()`——环境变量 > `app/.env` > 随机生成并落盘。
+  任何新代码**禁止写死口令默认值**（仓库公开，见避坑手册第 39 条）。
+- **Git 历史已重写过**（2026-10-28）：用 `git-filter-repo` 清掉了历史中的明文口令。
+  后果：远程 main 与本地是**同一份重写后的历史**（`ee3fef2` 起），服务器那份是 `git reset --hard origin/main` 对齐的。
+  日常 `git pull` 正常；若再有人 `filter-repo`，本地/服务器都要重新对齐。
 
 ## 相关但独立的另一个仓库
 - `zhengyungithub/onboarding-ai-assistant`：同一个项目的**另一条开发线**（无共同祖先），
