@@ -12,6 +12,7 @@ import re
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -334,7 +335,18 @@ def similarity(a: str, b: str) -> float:
 
 # ---------------------------------------------------------------- 会话
 SESSIONS = {}          # token -> {"type": "candidate"/"admin", ...}
-SMS_CODES = {}         # phone -> code（演示环境；生产替换为短信网关）
+
+# 短信验证码：phone -> {"code", "expires_at", "tries"}
+#
+# 演示环境会把验证码回显到前端（方便登录演示），但**不能因此放弃基本防护**：
+# 回显意味着"知道手机号就能登录他人账号"，所以无论是否回显，都强制：
+#   1. 5 分钟过期（原来的实现永不过期，错误提示却写着"已过期"）
+#   2. 最多 5 次错误尝试（6 位码无限制 = 可暴力枚举）
+# 上线时把 DEMO_ECHO_CODE 置 0，验证码走短信网关，响应体不再回显。
+SMS_CODES = {}
+SMS_TTL_SEC = int(os.getenv("SMS_TTL_SEC", "300"))
+SMS_MAX_TRIES = int(os.getenv("SMS_MAX_TRIES", "5"))
+DEMO_ECHO_CODE = os.getenv("DEMO_ECHO_CODE", "1") not in ("0", "false", "False", "no")
 
 def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -456,18 +468,32 @@ def request_code(body: dict):
     if not row:
         raise HTTPException(404, "该手机号不在本次校招名单中，请确认后重试或联系领队")
     code = str(random.randint(100000, 999999))
-    SMS_CODES[phone] = code
-    # 生产环境此处对接短信网关；演示环境直接返回验证码
-    return {"ok": True, "demo_code": code,
-            "notice": "演示环境：验证码直接返回（生产环境将通过短信下发）"}
+    SMS_CODES[phone] = {"code": code, "expires_at": time.time() + SMS_TTL_SEC, "tries": 0}
+    # 生产环境此处对接短信网关；演示环境（DEMO_ECHO_CODE=1）才把验证码回显
+    ttl_min = max(1, SMS_TTL_SEC // 60)
+    if DEMO_ECHO_CODE:
+        return {"ok": True, "demo_code": code,
+                "notice": f"演示环境：验证码直接返回（{ttl_min} 分钟内有效，最多可输错 {SMS_MAX_TRIES} 次）"}
+    return {"ok": True, "notice": f"验证码已发送（{ttl_min} 分钟内有效，最多可输错 {SMS_MAX_TRIES} 次）"}
 
 
 @app.post("/api/login/verify")
 def verify(body: dict):
     phone = (body.get("phone") or "").strip()
     code = (body.get("code") or "").strip()
-    if SMS_CODES.get(phone) != code:
-        raise HTTPException(401, "验证码错误或已过期")
+    rec = SMS_CODES.get(phone)
+    if not rec:
+        raise HTTPException(401, "验证码已失效，请重新获取")
+    if time.time() > rec["expires_at"]:
+        del SMS_CODES[phone]
+        raise HTTPException(401, "验证码已过期，请重新获取")
+    if rec["tries"] >= SMS_MAX_TRIES:
+        del SMS_CODES[phone]
+        raise HTTPException(429, "错误次数过多，请重新获取验证码")
+    if rec["code"] != code:
+        rec["tries"] += 1
+        left = SMS_MAX_TRIES - rec["tries"]
+        raise HTTPException(401, f"验证码错误，还可尝试 {left} 次")
     del SMS_CODES[phone]
     conn = db()
     c = conn.execute("SELECT * FROM candidates WHERE phone=?", (phone,)).fetchone()
@@ -528,11 +554,22 @@ def me(request: Request):
     conn = db()
     c = conn.execute("SELECT * FROM candidates WHERE id=?", (sess["id"],)).fetchone()
     hist = conn.execute(
-        "SELECT status, note, created_at FROM status_history WHERE candidate_id=? ORDER BY id",
+        "SELECT status, note, reason, operator, created_at FROM status_history WHERE candidate_id=? ORDER BY id",
         (sess["id"],)).fetchall()
     conn.close()
     idx = STATUSES.index(c["status"]) if c["status"] in STATUSES else 0
-    timeline = [{"status": s, "done": i < idx, "current": i == idx} for i, s in enumerate(STATUSES)]
+    # 步骤条用**真实流水**驱动，而不是"序号在当前之前就算完成"：
+    # 允许跳步（flow 明确支持：批量导入/线下补录/破格录用）和合法回退（资料打回等 6 类），
+    # 按序号推会凭空造出一片"已完成"，也会把返工过的环节重新抹成未完成。
+    counts = {}
+    for h in hist:
+        counts[h["status"]] = counts.get(h["status"], 0) + 1
+    timeline = [{"status": s,
+                 "done": (s in counts) and i < idx,      # 真走过且在当前之前
+                 "skipped": (s not in counts) and i < idx,  # 在当前之前但没走过 = 跳过
+                 "current": i == idx,
+                 "rework": counts.get(s, 0) > 1}         # 走过不止一次 = 返过工
+                for i, s in enumerate(STATUSES)]
     return {"candidate": dict(c), "history": [dict(h) for h in hist], "timeline": timeline,
             "next_step": NEXT_STEP.get(c["status"], "")}
 
@@ -546,6 +583,30 @@ def chat_history(request: Request):
         (sess["id"],)).fetchall()
     conn.close()
     return {"messages": [dict(r) for r in rows]}
+
+
+@app.delete("/api/chat/history")
+def chat_history_delete(request: Request):
+    """真删除候选人的全部对话记录（含向量记忆）。
+
+    以前前端的「清空当前对话」只清了内存数组，刷新后对话原样回来，
+    而且这些记录仍在被 Agent 用作指代还原 / 向量召回 —— 一个声称删除却不删除的
+    隐私按钮，比没有这个按钮更糟。这里把承诺兑现：messages 表 + Qdrant 向量一起清。
+    """
+    sess = auth(request, "candidate")
+    cid = sess["id"]
+    conn = db()
+    deleted = conn.execute("DELETE FROM messages WHERE candidate_id=?", (cid,)).rowcount
+    conn.commit()
+    conn.close()
+    purged = 0
+    try:
+        purged = retrieval.purge_chat_memory(cid)
+    except Exception:
+        pass
+    flow.log(f"candidate#{cid}", "chat_clear", f"candidate#{cid}",
+             f"清空对话：{deleted} 条消息 / {purged} 条向量记忆")
+    return {"ok": True, "deleted": deleted, "purged": purged}
 
 
 @app.post("/api/chat")

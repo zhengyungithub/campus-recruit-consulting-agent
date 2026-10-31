@@ -218,10 +218,29 @@
           <el-descriptions-item label="下一步">{{ profile.next_step }}</el-descriptions-item>
         </el-descriptions>
         <el-steps direction="vertical" :active="activeIdx">
-          <el-step v-for="t in timeline" :key="t.status" :title="t.status"
-                   :status="t.done?'success':t.cur?'process':'wait'"
-                   :description="t.cur ? profile.next_step : ''" />
+          <el-step v-for="t in timeline" :key="t.status"
+                   :status="t.done ? 'success' : t.current ? 'process' : 'wait'">
+            <template #title>
+              <span :class="{ 'step-skipped': t.skipped }">{{ t.status }}</span>
+              <span v-if="t.rework" class="step-flag warn" title="这个环节返过工">↩ 返工</span>
+              <span v-if="t.skipped" class="step-flag muted" title="跳步或线下补录，未经过此环节">跳过</span>
+            </template>
+            <template #description>
+              <span v-if="t.current">{{ profile.next_step }}</span>
+              <span v-else-if="t.skipped" class="muted">未经过此环节</span>
+            </template>
+          </el-step>
         </el-steps>
+
+        <el-divider content-position="left">实际轨迹</el-divider>
+        <el-timeline v-if="hasHistory">
+          <el-timeline-item v-for="(h, i) in profile.history" :key="i"
+                            :timestamp="fmtTime(h.created_at)" placement="top">
+            {{ h.status }}
+            <div v-if="h.reason" class="muted">原因：{{ h.reason }}</div>
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty v-else description="暂无流转记录（批量导入时会直接落在当前环节）" :image-size="60" />
       </div>
     </el-drawer>
 
@@ -323,7 +342,9 @@ async function readAll() {
 const quickQs =['校招流程是怎样的？', '我现在到哪一步了？', '面试资料有什么要求？', '网签怎么操作？']
 
 const timeline = computed(() => profile.value?.timeline || [])
-const activeIdx = computed(() => timeline.value.findIndex(t => t.cur))
+// 注意字段名是后端返回的 current（不是 cur）—— 写错会导致当前环节不高亮
+const activeIdx = computed(() => timeline.value.findIndex(t => t.current))
+const hasHistory = computed(() => (profile.value?.history || []).length > 0)
 
 const esc = s => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML }
 const scroll = () => nextTick(() => { if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight })
@@ -353,7 +374,18 @@ function push(role, html, extra = {}) {
   // 返回响应式代理：流式更新 bot.html 依赖它触发重渲染，缺失会导致空气泡
   return messages.value[messages.value.length - 1]
 }
-function clearChat() { messages.value = []; procStages.value = []; procSteps.value = []; delMode.value = false }
+async function clearChat() {
+  // 真删除：先落库（messages 表 + Qdrant 向量记忆），再清前端数组。
+  // 以前只清内存 → 刷新后对话原样回来，而记录仍在被 Agent 用于指代还原和向量召回，
+  // 等于一个声称删除却不删除的隐私按钮。
+  try {
+    const r = await api.deleteChatHistory()
+    messages.value = []; procStages.value = []; procSteps.value = []; delMode.value = false
+    ElMessage.success(`对话已删除（${r.deleted} 条消息 / ${r.purged} 条记忆），刷新后不会恢复`)
+  } catch (e) {
+    ElMessage.error('删除失败：' + e.message)
+  }
+}
 function quick(q) { draft.value = q; send() }
 
 async function requestCode() {
@@ -412,8 +444,11 @@ const renderBot = t => esc(t).replace(/（参考条目：.+?）/s, m => `<span c
 async function loadMe() {
   try {
     const d = await api.me()
-    // /api/me 返回 {candidate, history, timeline, next_step}，展开候选人并保留派生字段
-    profile.value = { ...d.candidate, next_step: d.next_step, timeline: d.timeline }
+    // /api/me 返回 {candidate, history, timeline, next_step}，展开候选人并保留派生字段。
+    // history 必须一起留下来——步骤条的「跳过/返工」标记和下面的实际轨迹都靠它，
+    // 以前只取 timeline，等于把真实流水丢掉了。
+    profile.value = { ...d.candidate, next_step: d.next_step, timeline: d.timeline,
+                      history: d.history || [] }
   } catch { /* ignore */ }
 }
 async function loadTickets() { try { tickets.value = (await api.myTickets()).tickets } catch { /* ignore */ } }
@@ -662,4 +697,12 @@ onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer); if (cdTimer) cl
   .tb-left .sub { display: none; }
   .login-card { padding: 26px 22px 20px; }
 }
+
+/* 进度条：跳过的环节灰虚线、返工的环节打 ↩ 标记 —— 区分"标准模板"与"真实走过" */
+.step-skipped { color: #9aa0a6; text-decoration: line-through; text-decoration-style: dashed; }
+.step-flag { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 8px;
+  border: 1px solid #ece9e1; white-space: nowrap; }
+.step-flag.warn { color: #c98b3b; border-color: #f0dcbd; background: #fdf6e9; }
+.step-flag.muted { color: #9aa0a6; }
+.muted { color: #9aa0a6; font-size: 12px; }
 </style>

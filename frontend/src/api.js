@@ -39,6 +39,8 @@ export const api = {
   saveMyPassword: payload => request('/api/account/password', { method: 'POST', body: payload, auth: cand.token }),
   me: () => request('/api/me', { auth: cand.token }),
   chatHistory: () => request('/api/chat/history', { auth: cand.token }),
+  // 真删除：服务端一起清 messages 表与 Qdrant 向量记忆，刷新后不会回来
+  deleteChatHistory: () => request('/api/chat/history', { method: 'DELETE', auth: cand.token }),
   myTickets: () => request('/api/my_tickets', { auth: cand.token }),
   // S5.3 主动推送：站内通知（候选人端）
   notices: (limit = 50) => request(`/api/notices?limit=${limit}`, { auth: cand.token }),
