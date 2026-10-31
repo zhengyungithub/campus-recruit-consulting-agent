@@ -36,6 +36,19 @@ REJECTED = "rejected"
 # 少一处就等于给草稿开了一道后门——这是本模块存在的唯一理由。
 PUBLISHED_SQL = "active=1 AND COALESCE(review_status,'published')='published'"
 
+# ---------------------------------------------------------------- 可见性（分类）
+# 分类原义是"这条知识从哪来"（通用 / 工单回流），但**内部**不是来源，是**受众**：
+# 内部资料只给 HR 看，不进候选人的检索视野。改动前它只是一个下拉选项，
+# 贴了标签照样被 knowledge_search 命中并原样答出去——等于把内部口径发给了候选人。
+#
+# 于是给分类补一层语义：`内部` = 仅 HR 可见。检索统一走 `audience` 参数，
+# 候选人侧（Agent 工具 / 固定管线 / 兜底）一律 exclude，HR 侧（列表、查重）可见全部。
+INTERNAL = "内部"
+
+# 对**候选人**可见的条件 = 已发布 且 非内部。
+# 与 PUBLISHED_SQL 同源：新增任何面向候选人的知识读取点，都必须用这一条。
+CANDIDATE_SQL = PUBLISHED_SQL + f" AND COALESCE(category,'') <> '{INTERNAL}'"
+
 
 def now():
     return datetime.now().isoformat(timespec="seconds")

@@ -20,6 +20,7 @@
 首次扫描会做 bootstrap：直接把水位线推到当前最大 id 并跳过，
 否则存量 `status_history` 会被当成新事件，一次性给所有人补发历史通知。
 """
+import queue
 import sqlite3
 import threading
 from datetime import datetime
@@ -211,6 +212,7 @@ def _scan_status(conn) -> int:
         " FROM status_history h WHERE h.id>? ORDER BY h.id", (cursor,)).fetchall()
     made = 0
     max_id = cursor
+    touched = set()                       # 本轮真正写入的候选人，结束后统一推 SSE
     for r in rows:
         max_id = max(max_id, r["id"])
         if r["prev"] == r["status"]:
@@ -224,7 +226,11 @@ def _scan_status(conn) -> int:
              _status_body(r["status"], r["note"] or ""),
              "status_history", str(r["id"]), _now()))
         made += cur.rowcount
+        if cur.rowcount:
+            touched.add(r["candidate_id"])
     _set_kv(conn, "notice_status_cursor", str(max_id))
+    for cid in touched:
+        _publish(cid)
     return made
 
 
@@ -235,6 +241,7 @@ def _scan_stale(conn, cfg: dict) -> int:
     """
     stale_days = max(1, cfg["notice_stale_days"])
     cooldown = max(1, cfg["notice_stale_cooldown"])
+    touched = set()
     # 每个候选人取当前所处状态与进入时间（最近一条历史）
     rows = conn.execute(
         "SELECT c.id cid, c.status status, h.created_at since"
@@ -262,6 +269,10 @@ def _scan_stale(conn, cfg: dict) -> int:
              _stale_body(status, days, TODO_STATUSES[status]),
              "status_stale", f"{status}@{since.isoformat()}#{bucket}", _now()))
         made += cur.rowcount
+        if cur.rowcount:
+            touched.add(r["cid"])
+    for cid in touched:
+        _publish(cid)
     return made
 
 
@@ -291,7 +302,10 @@ def notify_ticket_reply(candidate_id: int, ticket_id: int, answer: str) -> int:
             (candidate_id, KIND_TICKET, f"人工回复 · 工单#{ticket_id}", body,
              "ticket", str(ticket_id), _now()))
         conn.commit()
-        return cur.rowcount
+        n = cur.rowcount
+        if n:
+            _publish(candidate_id)        # HR 一回复，候选人铃铛立刻亮
+        return n
     finally:
         conn.close()
 
@@ -405,3 +419,61 @@ def start_worker(interval_s: int = None):
 
 def stop_worker():
     _worker_stop.set()
+
+
+# ---------------------------------------------------------------- SSE 订阅（替掉 60 秒轮询）
+# 为什么需要：前端原本每 60 秒轮询一次未读数。1000 个在线候选人 = 每分钟 1000 次
+# 请求 + 1000 次 unread_count 查询，绝大多数返回"没有新通知"。
+# 通知是**低频突发**事件，天然该推而不是拉；项目里 SSE 基础设施本来就有。
+#
+# 为什么不复用对话那条 SSE（/api/chat/agent/stream）：两者生命周期不同——
+# 对话流随一次提问结束而关闭，通知通道需要全程常驻。混在一条里会出现
+# "没在提问就收不到通知"的怪象。
+_subs = {}                       # candidate_id -> set[queue.Queue]
+_sub_lock = threading.Lock()
+
+
+def subscribe(cid: int) -> queue.Queue:
+    """登记一个 SSE 连接，返回它的消息队列。"""
+    q = queue.Queue()
+    with _sub_lock:
+        _subs.setdefault(cid, set()).add(q)
+    return q
+
+
+def unsubscribe(cid: int, q: queue.Queue):
+    with _sub_lock:
+        s = _subs.get(cid)
+        if not s:
+            return
+        s.discard(q)
+        if not s:
+            _subs.pop(cid, None)          # 该候选人已无连接，避免空集合常驻
+
+
+def _publish(cid: int):
+    """通知落库后唤醒该候选人的 SSE 连接。
+
+    只推"有新通知 + 未读数"这个信号，**不带正文**——正文仍由前端拉 /api/notices。
+    这样即使推送丢失（重连窗口、代理缓冲），下次打开铃铛或回退轮询也能补上，
+    推送只是用来**降低延迟**，不作为唯一投递通道。
+    """
+    with _sub_lock:
+        targets = list(_subs.get(cid, ()))
+    if not targets:
+        return
+    try:
+        n = unread_count(cid)
+    except Exception:
+        n = 1                             # 查不到就按"至少 1 条"推，宁可多拉一次
+    for q in targets:
+        try:
+            q.put_nowait({"unread": n})
+        except Exception:
+            pass
+
+
+def subscriber_count() -> int:
+    """当前在线的 SSE 订阅连接数（观测用，便于确认推送真的有人接）。"""
+    with _sub_lock:
+        return sum(len(s) for s in _subs.values())

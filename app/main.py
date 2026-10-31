@@ -7,6 +7,7 @@
 import hashlib
 import json
 import os
+import queue as _queue
 import random
 import re
 import secrets
@@ -17,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import dedupe as dedupe_mod
@@ -169,6 +170,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_rate_events ON rate_events(candidate_id, created_at);
         """
     )
+    conn.executescript(LOGIN_CODES_SQL)          # 验证码落库（代替进程内存字典）
     # 轻量迁移：候选人可选设置登录密码（手机号 + 密码登录）
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(candidates)").fetchall()]
     if "password_hash" not in cols:
@@ -343,10 +345,58 @@ SESSIONS = {}          # token -> {"type": "candidate"/"admin", ...}
 #   1. 5 分钟过期（原来的实现永不过期，错误提示却写着"已过期"）
 #   2. 最多 5 次错误尝试（6 位码无限制 = 可暴力枚举）
 # 上线时把 DEMO_ECHO_CODE 置 0，验证码走短信网关，响应体不再回显。
-SMS_CODES = {}
+# 验证码**落库**而不是放进程内存：内存字典重启即清空（用户刚收到验证码、服务
+# 重启就登不上），且多 worker 部署时各进程不共享（worker A 发的码打到 worker B 验不过）。
+# SESSIONS 之所以能容忍内存态，是因为它有 persist_session 双写 DB 兜底；
+# 验证码原来没有这层，属于同一个坑漏了一处。
+LOGIN_CODES_SQL = """
+        CREATE TABLE IF NOT EXISTS login_codes(
+            phone TEXT PRIMARY KEY,
+            code TEXT NOT NULL,
+            expires_at REAL NOT NULL,
+            tries INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+"""
 SMS_TTL_SEC = int(os.getenv("SMS_TTL_SEC", "300"))
 SMS_MAX_TRIES = int(os.getenv("SMS_MAX_TRIES", "5"))
 DEMO_ECHO_CODE = os.getenv("DEMO_ECHO_CODE", "1") not in ("0", "false", "False", "no")
+
+
+def _sms_put(phone: str, code: str):
+    conn = db()
+    conn.execute("INSERT OR REPLACE INTO login_codes(phone, code, expires_at, tries, created_at)"
+                 " VALUES(?,?,?,0,?)", (phone, code, time.time() + SMS_TTL_SEC, now()))
+    conn.commit()
+    conn.close()
+
+
+def _sms_get(phone: str):
+    """取验证码；过期顺手清掉，避免表无限增长。"""
+    conn = db()
+    row = conn.execute("SELECT * FROM login_codes WHERE phone=?", (phone,)).fetchone()
+    if row and time.time() > row["expires_at"]:
+        conn.execute("DELETE FROM login_codes WHERE phone=?", (phone,))
+        conn.commit()
+        conn.close()
+        return None
+    conn.close()
+    return dict(row) if row else None
+
+
+def _sms_bump(phone: str):
+    """记一次错误尝试。"""
+    conn = db()
+    conn.execute("UPDATE login_codes SET tries=tries+1 WHERE phone=?", (phone,))
+    conn.commit()
+    conn.close()
+
+
+def _sms_del(phone: str):
+    conn = db()
+    conn.execute("DELETE FROM login_codes WHERE phone=?", (phone,))
+    conn.commit()
+    conn.close()
 
 def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
@@ -362,8 +412,11 @@ def _faq_review_status(source: str) -> str:
     return kb.DRAFT if src.startswith("doc_import") or src.startswith("ticket#") else kb.PUBLISHED
 
 
-def auth(request: Request, typ: str):
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+def auth(request: Request, typ: str, token: str = ""):
+    # SSE（EventSource）没法带 Authorization header，token 只能走 query；
+    # 所以这里允许调用方显式传 token 覆盖 header 取值。
+    if not token:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
     sess = SESSIONS.get(token)
     if not sess:
         # 内存未命中 → 从数据库恢复（服务重启后会话不丢失）
@@ -468,7 +521,7 @@ def request_code(body: dict):
     if not row:
         raise HTTPException(404, "该手机号不在本次校招名单中，请确认后重试或联系领队")
     code = str(random.randint(100000, 999999))
-    SMS_CODES[phone] = {"code": code, "expires_at": time.time() + SMS_TTL_SEC, "tries": 0}
+    _sms_put(phone, code)
     # 生产环境此处对接短信网关；演示环境（DEMO_ECHO_CODE=1）才把验证码回显
     ttl_min = max(1, SMS_TTL_SEC // 60)
     if DEMO_ECHO_CODE:
@@ -481,20 +534,17 @@ def request_code(body: dict):
 def verify(body: dict):
     phone = (body.get("phone") or "").strip()
     code = (body.get("code") or "").strip()
-    rec = SMS_CODES.get(phone)
+    rec = _sms_get(phone)
     if not rec:
-        raise HTTPException(401, "验证码已失效，请重新获取")
-    if time.time() > rec["expires_at"]:
-        del SMS_CODES[phone]
-        raise HTTPException(401, "验证码已过期，请重新获取")
+        raise HTTPException(401, "验证码已失效或已过期，请重新获取")
     if rec["tries"] >= SMS_MAX_TRIES:
-        del SMS_CODES[phone]
+        _sms_del(phone)
         raise HTTPException(429, "错误次数过多，请重新获取验证码")
     if rec["code"] != code:
-        rec["tries"] += 1
-        left = SMS_MAX_TRIES - rec["tries"]
-        raise HTTPException(401, f"验证码错误，还可尝试 {left} 次")
-    del SMS_CODES[phone]
+        _sms_bump(phone)
+        left = SMS_MAX_TRIES - rec["tries"] - 1
+        raise HTTPException(401, f"验证码错误，还可尝试 {max(0, left)} 次")
+    _sms_del(phone)
     conn = db()
     c = conn.execute("SELECT * FROM candidates WHERE phone=?", (phone,)).fetchone()
     conn.close()
@@ -657,6 +707,45 @@ def my_notices(request: Request, limit: int = 50, unread_only: bool = False):
     items = notices.list_for(sess["id"], limit=min(max(limit, 1), 200),
                              unread_only=bool(unread_only))
     return {"notices": items, "unread": notices.unread_count(sess["id"])}
+
+
+@app.get("/api/notices/stream")
+def notices_stream(request: Request, token: str = ""):
+    """候选人通知长连接（SSE）：有新通知时立刻推未读数，替掉 60 秒轮询。
+
+    三条设计取舍：
+    - **只推信号不推正文**：前端收到后仍去拉 /api/notices。推送定位是"降低延迟"，
+      不作为唯一投递通道——推送丢了也只是晚一点知道，不会出现"永远收不到"。
+    - **25 秒心跳**：nginx 与浏览器都会在无流量一段时间后静默断连，
+      没有心跳的话连接掉了前端还以为自己在线。
+    - **`X-Accel-Buffering: no`**：nginx 默认缓冲响应体，不关掉 SSE 会被攒着一起发，
+      表现为"通知迟到大半天才到"。
+
+    ⚠️ 容量提醒：服务是单 worker，每个 SSE 连接占用一个线程池线程（默认 40）。
+    演示量级无压力，真要上千人同时在线需改 async 端点或上调线程池。
+    """
+    sess = auth(request, "candidate", token)
+    cid = sess["id"]
+
+    def gen():
+        q = notices.subscribe(cid)
+        try:
+            yield "retry: 3000\n"          # 断线后 3 秒重连
+            yield f"data: {json.dumps({'event': 'init', 'unread': notices.unread_count(cid)})}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                except _queue.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            notices.unsubscribe(cid, q)    # 客户端断开必须摘掉，否则订阅集合泄漏
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    })
 
 
 @app.post("/api/notices/read")

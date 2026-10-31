@@ -81,8 +81,15 @@ def fixed_chat_reply(cid: int, msg: str, allow_ticket: bool = True):
 
 
 def _faq_search(msg: str):
+    """固定管线的知识检索。**这里是候选人路径**，所以用 CANDIDATE_SQL。
+
+    为什么不能用 PUBLISHED_SQL：固定管线是 `off` 档的基线、也是 `shadow` 档的对比方，
+    它在 Agent 之外独立把 FAQ 答案直接吐给候选人。检索层加了受众过滤而这里没加，
+    就等于"关掉灰度 = 关掉隔离"——同一条内部知识，Agent 模式下答不出来，
+    固定管线却原样答出去。两条的可见性口径必须一致。
+    """
     with get_conn() as conn:
-        faqs = conn.execute(f"SELECT * FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
+        faqs = conn.execute(f"SELECT * FROM faqs WHERE {kb.CANDIDATE_SQL}").fetchall()
     scored = sorted(((text_similarity(msg, f["question"]), f) for f in faqs),
                     key=lambda x: -x[0])
     return [{"question": f["question"], "answer": f["answer"], "score": round(s, 4)}

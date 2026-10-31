@@ -67,20 +67,44 @@ def text_similarity(a: str, b: str) -> float:
     return score
 
 
-def _active_faqs():
+def _active_faqs(include_internal: bool = True):
     """对检索可见的知识库条目。S6.1：草稿（未审核）不进检索——
-    一条未经确认的知识会放大到所有问到它的候选人，宁可先不答。"""
+    一条未经确认的知识会放大到所有问到它的候选人，宁可先不答。
+
+    `include_internal=False` = **候选人视角**：连"内部"分类一起排除。
+    内部资料（如薪资带宽、内部评级口径）只给 HR 看，不进候选人的检索视野。
+    HR 侧的列表与查重传 True（默认），否则 HR 自己都查不到自己维护的内部条目。
+    """
+    where = kb.PUBLISHED_SQL if include_internal else kb.CANDIDATE_SQL
     with get_conn() as conn:
         return conn.execute(
-            f"SELECT id, question, answer, category FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
+            f"SELECT id, question, answer, category FROM faqs WHERE {where}").fetchall()
 
 
-def _keyword_search(query: str, k: int = 4):
-    scored = [(text_similarity(query, f["question"]), f) for f in _active_faqs()]
+def _keyword_search(query: str, k: int = 4, include_internal: bool = True):
+    scored = [(text_similarity(query, f["question"]), f)
+              for f in _active_faqs(include_internal)]
     scored.sort(key=lambda x: -x[0])
     return [{"id": f["id"], "question": f["question"], "answer": f["answer"],
              "category": f["category"], "score": round(s, 4), "source": "keyword"}
             for s, f in scored[:k] if s >= 0.15]
+
+
+def _qdrant_audience_filter(include_internal: bool):
+    """向量侧的受众过滤。返回 None 表示不过滤（HR 视角）。
+
+    为什么要单独一层：Qdrant 里存的是 payload 快照，`sync_faqs` 把内部条目也写进去了
+    （HR 查重需要它）。所以"排除内部"不能靠不入库，只能在**查询时**过滤——
+    这也更符合权限的常规写法：数据照常存，可见性在读取时判定。
+    """
+    if include_internal:
+        return None
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        return Filter(must_not=[FieldCondition(key="category",
+                                               match=MatchValue(value=kb.INTERNAL))])
+    except Exception:
+        return None                       # 拿不到 Filter 类型时宁可走下面的兜底
 
 
 def question_vectors(questions):
@@ -265,18 +289,30 @@ def sync_faqs():
     return len(todo)
 
 
-def search(query: str, k: int = 4):
-    """混合检索：dense + keyword 融合（dense 缺席时纯关键词，保证永不失败）"""
+def search(query: str, k: int = 4, include_internal: bool = True):
+    """混合检索：dense + keyword 融合（dense 缺席时纯关键词，保证永不失败）
+
+    `include_internal=False` 用于候选人视角（Agent 的 knowledge_search），
+    关键词与向量两条路都要挡，只挡一条等于没挡——dense 是主力召回路径。
+    """
     _STATS["search_calls"] += 1
-    results = {r["id"]: {**r, "hybrid": r["score"]} for r in _keyword_search(query, k)}
+    results = {r["id"]: {**r, "hybrid": r["score"]}
+               for r in _keyword_search(query, k, include_internal)}
     c = _client_or_none()
     if c is not None and c.count("kb_entries", exact=True).count > 0:
         try:
             from .llm_service import get_embeddings
             vec = get_embeddings().embed_query(query)
-            hits = c.query_points("kb_entries", query=vec, limit=k).points
+            qf = _qdrant_audience_filter(include_internal)
+            hits = c.query_points("kb_entries", query=vec, limit=k,
+                                  query_filter=qf).points
             for h in hits:
                 p = h.payload or {}
+                # 纵深防御：Filter 万一没生效（客户端版本差异、payload 缺失等），
+                # 在 Python 侧按 payload 再挡一次。权限过滤只依赖一层太脆——
+                # 漏一次就是把内部资料原样发给候选人，而这条路径上没有任何人会复核。
+                if not include_internal and (p.get("category") or "") == kb.INTERNAL:
+                    continue
                 # ⚠️ 原实现写的是 `1.0 - h.score`，注释称"qdrant 返回的是距离"——**这是错的**。
                 # 实测完全一致文本的 score = 1.0000，说明 COSINE 下 qdrant 返回的就是余弦相似度。
                 # 那个换算把相似度反向成了距离，导致 hybrid 融合里越相似的条目得分越低，

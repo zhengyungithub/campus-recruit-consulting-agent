@@ -4,10 +4,13 @@
       <h4>新增 FAQ</h4>
       <div style="display:flex;gap:10px;margin-bottom:10px">
         <el-input v-model="form.question" placeholder="问题（候选人可能的问法）" style="flex:2" />
-        <el-select v-model="form.category" style="width:110px">
+        <el-select v-model="form.category" style="width:130px">
           <el-option value="通用" /><el-option value="回流" /><el-option value="内部" />
         </el-select>
       </div>
+      <el-alert v-if="form.category === '内部'" type="warning" :closable="false"
+                style="margin-bottom:10px" title="内部资料：仅 HR 可见"
+                description="标为「内部」的条目不会进入候选人的检索范围，AI 不会引用、也不会回答出去。适合薪资带宽、内部评级口径等不便对候选人公开的内容。" />
       <el-input v-model="form.answer" type="textarea" :rows="3" placeholder="答案" />
       <div style="margin-top:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <el-button type="primary" @click="add">保存</el-button>
@@ -36,6 +39,13 @@
             <el-option v-for="s in sources" :key="s.source"
                        :label="`${srcLabel(s.source)}（${s.count}）`" :value="s.source" />
           </el-select>
+          <!-- 受众筛选：内部条目不进候选人检索，这里单独能筛出来便于复核 -->
+          <el-select v-model="catFilter" size="small" style="width:130px">
+            <el-option label="全部分类" value="" />
+            <el-option label="通用" value="通用" />
+            <el-option label="回流" value="回流" />
+            <el-option :label="`内部（${internalCount}）`" value="内部" />
+          </el-select>
           <el-button size="small" type="danger" plain :disabled="!srcFilter || srcFilter === 'manual'"
                      @click="rollback">回滚该来源</el-button>
         </div>
@@ -43,10 +53,17 @@
       <el-table :data="paged" size="small">
         <el-table-column prop="question" label="问题" width="280" show-overflow-tooltip />
         <el-table-column prop="answer" label="答案" show-overflow-tooltip />
-        <el-table-column label="分类" width="100">
+        <el-table-column label="分类" width="130">
           <template #default="{ row }">
-            {{ row.category }}
-            <el-tag v-if="row.category === '回流'" type="success" size="small">回流</el-tag>
+            <el-tag v-if="row.category === '内部'" type="danger" size="small">
+              <el-icon style="margin-right:3px"><Lock /></el-icon>内部
+            </el-tag>
+            <el-tag v-else-if="row.category === '回流'" type="success" size="small">回流</el-tag>
+            <el-tag v-else type="info" size="small">{{ row.category || '通用' }}</el-tag>
+            <!-- 可见性提示：内部条目 AI 检索不到，避免 HR 疑惑"为什么机器人不答这条" -->
+            <div v-if="row.category === '内部'" class="tip" style="font-size:11px">
+              候选人不可见
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="来源" width="120">
@@ -74,7 +91,7 @@
       </el-table>
       <div class="page-bar">
         <el-pagination v-model:current-page="page" v-model:page-size="size"
-          :total="rows.length" :page-sizes="[10, 20, 50, 100]"
+          :total="filtered.length" :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next" background small />
       </div>
     </el-card>
@@ -82,6 +99,14 @@
     <el-dialog v-model="dlg" title="编辑 FAQ" width="560">
       <el-input v-model="editing.question" placeholder="问题" style="margin-bottom:10px" />
       <el-input v-model="editing.answer" type="textarea" :rows="4" placeholder="答案" />
+      <!-- 分类可改：HR 需要能把一条已发布的通用知识转成「内部」（或反向放开） -->
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;color:#606266">分类</span>
+        <el-select v-model="editing.category" size="small" style="width:130px">
+          <el-option value="通用" /><el-option value="回流" /><el-option value="内部" />
+        </el-select>
+        <span v-if="editing.category === '内部'" class="tip">保存后候选人将检索不到本条</span>
+      </div>
       <template #footer>
         <el-button @click="dlg = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
@@ -141,12 +166,17 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document } from '@element-plus/icons-vue'
+import { Document, Lock } from '@element-plus/icons-vue'
 import { api } from '../api'
 
 const rows = ref([])
 const page = ref(1), size = ref(10)
-const paged = computed(() => rows.value.slice((page.value - 1) * size.value, page.value * size.value))
+// 受众筛选（内部 = 仅 HR 可见，不进候选人检索）
+const catFilter = ref('')
+const filtered = computed(() => catFilter.value
+  ? rows.value.filter(r => (r.category || '通用') === catFilter.value) : rows.value)
+const internalCount = computed(() => rows.value.filter(r => r.category === '内部').length)
+const paged = computed(() => filtered.value.slice((page.value - 1) * size.value, page.value * size.value))
 const form = ref({ question: '', answer: '', category: '通用' })
 const dlg = ref(false), editing = ref({})
 const parsing = ref(false), impDlg = ref(false), saving = ref(false)

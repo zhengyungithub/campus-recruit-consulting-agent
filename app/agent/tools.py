@@ -67,8 +67,12 @@ def _knowledge_search(candidate_id, query: str):
         模型看到 → 自然语言（只有问题与答案，无内部字段）
         框架拿到 → take_kb_hits() 旁路（含 score 等，用于引用与看板）
     这与 S4.4 补执行"回灌用自然语言而非裸 JSON"是同一条原则。
+
+    受众：这里是**候选人**在问，所以 `include_internal=False`——
+    标了"内部"的条目（薪资带宽、内部评级口径等）不进候选人的检索结果，
+    否则模型会把它当普通知识原样答出去。HR 侧的知识库列表与查重不受影响。
     """
-    hits = retrieval.search(query, k=4)
+    hits = retrieval.search(query, k=4, include_internal=False)
     _KB_LAST["hits"] = hits or []
     if not hits:
         return "知识库未命中任何条目。请如实告知候选人：该问题知识库暂无答案，建议转人工处理。"

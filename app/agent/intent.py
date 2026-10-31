@@ -108,8 +108,11 @@ def _retrieval_classify(text: str) -> Optional[dict]:
         from .retrieval import text_similarity
         with get_conn() as conn:
             from . import kb
+            # 候选人路径：内部条目不该参与意图判定。
+            # 否则候选人问到内部口径时会被判成"知识库有答案"，
+            # 后续检索又一无所获，白白多绕一圈才转工单。
             faqs = conn.execute(
-                f"SELECT question FROM faqs WHERE {kb.PUBLISHED_SQL}").fetchall()
+                f"SELECT question FROM faqs WHERE {kb.CANDIDATE_SQL}").fetchall()
         best = max((text_similarity(text, f["question"]) for f in faqs), default=0.0)
         if best >= 0.5:
             return {"intent": "kb_qa", "confidence": round(min(0.9, best), 2),

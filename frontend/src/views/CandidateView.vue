@@ -321,6 +321,9 @@ const drawerProg = ref(false), drawerTk = ref(false)
 // S5.3 站内通知：铃铛未读数每 60 秒轮询一次，展开面板时即时拉列表
 const notices = ref([]), unread = ref(0)
 let noticeTimer = null
+// 通知长连接：SSE 收到事件即刷新未读数；连不上时回退到轮询（见 startNoticeStream）
+let noticeEs = null
+let noticeFallback = null
 const fmtTime = t => (t ? String(t).replace('T', ' ').slice(0, 16) : '')
 async function loadNotices() {
   if (!logged.value) return
@@ -429,6 +432,9 @@ async function savePwd() {
 function logout() {
   cand.token = ''; logged.value = false; messages.value = []; profile.value = null
   notices.value = []; unread.value = 0
+  // 断开通知长连接，否则它会带着空 token 一直重连
+  if (noticeEs) { noticeEs.close(); noticeEs = null }
+  if (noticeFallback) { clearInterval(noticeFallback); noticeFallback = null }
 }
 
 async function enter() {
@@ -511,15 +517,56 @@ async function send() {
   loadTickets(); loadMe(); scroll()
 }
 
+/** 通知推送：优先 SSE，失败回退轮询。
+ *
+ * 原来是固定 60 秒轮询：1000 人在线就是每分钟 1000 次请求，绝大多数返回"没新通知"。
+ * 通知是低频突发事件，改用长连接后只有真有通知时才产生流量。
+ *
+ * 为什么保留轮询：SSE 可能被代理缓冲、被防火墙掐断、或浏览器标签页休眠后掉线。
+ * 推送只用来降低延迟，不作为唯一通道——连不上就回到 60 秒轮询，功能不降级。
+ */
+function startNoticeStream() {
+  if (typeof EventSource === 'undefined') { startNoticeFallback(); return }
+  try {
+    // EventSource 不能带自定义 header，token 走 query（后端 auth() 已支持）
+    const es = new EventSource(`/api/notices/stream?token=${encodeURIComponent(cand.token)}`)
+    noticeEs = es
+    es.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data)
+        if (typeof d.unread === 'number') {
+          unread.value = d.unread
+          loadNotices()                       // 拉正文；推只是信号
+        }
+      } catch { /* 心跳或非法帧，忽略 */ }
+    }
+    es.onerror = () => {
+      // 浏览器会自动重连（服务端发了 retry: 3000）；这里同时兜一层轮询，
+      // 避免长时间连不上期间通知完全静默。
+      if (!noticeFallback) startNoticeFallback()
+    }
+  } catch {
+    startNoticeFallback()
+  }
+}
+function startNoticeFallback() {
+  if (noticeFallback) return
+  noticeFallback = setInterval(loadNotices, 60000)
+}
+
 onMounted(() => {
   if (logged.value) {
     enter()
     loadNotices()
-    // 未读数轮询：HR 改状态后候选人不必刷新页面就能看到红点
-    noticeTimer = setInterval(loadNotices, 60000)
+    startNoticeStream()
   }
 })
-onUnmounted(() => { if (noticeTimer) clearInterval(noticeTimer); if (cdTimer) clearInterval(cdTimer) })
+onUnmounted(() => {
+  if (noticeTimer) clearInterval(noticeTimer)
+  if (noticeFallback) clearInterval(noticeFallback)
+  if (noticeEs) noticeEs.close()
+  if (cdTimer) clearInterval(cdTimer)
+})
 </script>
 
 <style scoped>
